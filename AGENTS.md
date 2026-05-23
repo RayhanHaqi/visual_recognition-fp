@@ -25,12 +25,17 @@
 ## Lab setup (clone → train)
 
 ```bash
-conda activate visualrecognition
+export FP_CONDA_ENV=selectedtopics_env   # default in scripts/conda_env.sh
+conda activate "$FP_CONDA_ENV"
 cd FP
 python setup.py --install --download --preprocess
 bash scripts/run_tests.sh
 bash scripts/run_phase1.sh 0
 ```
+
+Resume: `SKIP_DOWNLOAD=1 SKIP_TRAIN=1 bash scripts/run_phase1.sh 0`
+
+**Prediction:** per-tile counts → image total = **sum** of unique tiles (`data/predict.py`).
 
 Requires `~/.kaggle/kaggle.json` (or env `KAGGLE_USERNAME` / `KAGGLE_KEY`) and **≥110 GB** free disk.
 
