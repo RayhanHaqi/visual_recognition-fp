@@ -103,11 +103,24 @@ def install_requirements() -> int:
     ).returncode
 
 
+def _kaggle_executable() -> str:
+    """Console script from pip (python -m kaggle lacks __main__ in some installs)."""
+    import shutil
+
+    for candidate in (
+        Path(sys.executable).parent / "kaggle",
+        shutil.which("kaggle"),
+    ):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    raise FileNotFoundError(
+        "kaggle CLI not found. Run: pip install kaggle  (same env as this python)"
+    )
+
+
 def _run_kaggle_download(dest: Path) -> int:
     cmd = [
-        sys.executable,
-        "-m",
-        "kaggle",
+        _kaggle_executable(),
         "competitions",
         "download",
         "-c",
