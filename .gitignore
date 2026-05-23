@@ -1,0 +1,32 @@
+# Secrets — never commit (example template is OK)
+.kaggle/*
+!.kaggle/kaggle.json.example
+
+# Large / generated artifacts
+datasets/
+datasets_tmp/
+*.pth
+*.pt
+
+# Download cache
+noaa-fisheries-steller-sea-lion-population-count.zip
+*.zip
+
+# Runtime outputs (keep .gitkeep only)
+checkpoints/*
+!checkpoints/.gitkeep
+log/*
+!log/.gitkeep
+submission/*
+!submission/.gitkeep
+report/*
+!report/.gitkeep
+notebooks/*
+!notebooks/.gitkeep
+
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.ipynb_checkpoints/
+.pytest_cache/
