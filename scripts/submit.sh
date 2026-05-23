@@ -1,5 +1,5 @@
 #!/bin/bash
-# Submit to Kaggle after inference (requires ~/.kaggle/kaggle.json).
+# Submit to Kaggle after inference. Credentials: FP/.kaggle/kaggle.json (gitignored).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091

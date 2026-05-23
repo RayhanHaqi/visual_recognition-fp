@@ -21,7 +21,7 @@ from data.dataset import (
     SeaLionTileDataset,
     build_train_val_paths,
 )
-from data.targets import COUNT_COLUMNS, counts_for_image, load_train_counts
+from data.predict import predict_image_tiled
 from model.build import build_counter
 from model.losses import rmse_loss
 from utils.io import append_log_row, init_log_csv, next_run_id, save_checkpoint
@@ -60,21 +60,32 @@ def parse_args():
 
 
 @torch.no_grad()
-def evaluate_images(model, val_paths, counts_df, tile_size, device, batch_size=8):
+def evaluate_images(
+    model,
+    val_paths,
+    counts_df,
+    tile_size,
+    device,
+    shifts=3,
+    stride=None,
+    batch_size=8,
+):
+    """Tiled sum aggregation — same contract as inference.py / validate.py."""
     if not val_paths:
         return float("nan")
-    ds = SeaLionImageDataset(val_paths, counts_df, tile_size=tile_size, train=False)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False, num_workers=0)
-    model.eval()
+    from data.targets import counts_for_image
+
+    stride = stride or tile_size // 2
     preds, tgts = [], []
-    for images, targets, _ in loader:
-        images = images.to(device)
-        out = torch.clamp(model(images), min=0)
-        preds.append(out.cpu().numpy())
-        tgts.append(targets.numpy())
-    pred = np.concatenate(preds, axis=0)
-    tgt = np.concatenate(tgts, axis=0)
-    return rmse_numpy(pred, tgt)
+    for path in val_paths:
+        preds.append(
+            predict_image_tiled(
+                model, path, tile_size, device,
+                shifts=shifts, stride=stride, batch_size=batch_size,
+            )
+        )
+        tgts.append(counts_for_image(counts_df, path.stem))
+    return rmse_numpy(np.stack(preds), np.stack(tgts))
 
 
 def train_one_epoch(model, loader, optimizer, scheduler, device, scaler, use_amp):
@@ -162,7 +173,14 @@ def main():
             model, train_loader, optimizer, scheduler, device, scaler, args.amp
         )
         val_rmse = evaluate_images(
-            model, val_paths, counts_df, args.tile_size, device, batch_size=args.batch_size
+            model,
+            val_paths,
+            counts_df,
+            args.tile_size,
+            device,
+            shifts=3,
+            stride=args.tile_size // 2,
+            batch_size=args.batch_size,
         )
         lr = optimizer.param_groups[0]["lr"]
         if val_rmse < best_rmse:

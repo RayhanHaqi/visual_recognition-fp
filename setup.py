@@ -8,11 +8,10 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
-from pathlib import Path
-
-from tqdm import tqdm
+from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "datasets"
@@ -153,6 +152,12 @@ def _run_kaggle_download_api(dest: Path) -> int:
     return 0
 
 
+def _tqdm(*args, **kwargs):
+    from tqdm import tqdm
+
+    return tqdm(*args, **kwargs)
+
+
 def _run_kaggle_download_cli(dest: Path) -> int:
     """Fallback: kaggle CLI + monitor zip file size with tqdm."""
     cmd = [
@@ -172,7 +177,7 @@ def _run_kaggle_download_cli(dest: Path) -> int:
     dest.mkdir(parents=True, exist_ok=True)
     zip_guess = dest / ZIP_NAME
     proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
-    with tqdm(
+    with _tqdm(
         desc="Downloading",
         unit="B",
         unit_scale=True,
@@ -204,47 +209,92 @@ def _run_kaggle_download(dest: Path) -> int:
         return _run_kaggle_download_cli(dest)
 
 
-def _extract_zip(zip_path: Path, data_dir: Path) -> None:
-    tmp = ROOT / "datasets_tmp"
-    if tmp.exists():
-        shutil.rmtree(tmp)
-    tmp.mkdir(parents=True)
+def _is_safe_zip_member(name: str) -> bool:
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts:
+        return False
+    return True
 
-    print(f"Extracting {zip_path} ...")
+
+def _safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_resolved = dest_dir.resolve()
     with zipfile.ZipFile(zip_path, "r") as zf:
-        members = zf.infolist()
-        for info in tqdm(members, desc="Extracting", unit="file"):
-            zf.extract(info, tmp)
+        members = [m for m in zf.infolist() if not m.is_dir()]
+        for info in _tqdm(members, desc="Extracting", unit="file"):
+            if not _is_safe_zip_member(info.filename):
+                raise ValueError(f"Unsafe zip path: {info.filename}")
+            target = (dest_dir / info.filename).resolve()
+            if not str(target).startswith(str(dest_resolved)):
+                raise ValueError(f"Zip slip blocked: {info.filename}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst)
 
-    data_dir.mkdir(parents=True, exist_ok=True)
+
+def _find_extract_layout_root(tmp: Path) -> Path | None:
     if (tmp / "Train").is_dir():
-        for item in tmp.iterdir():
-            dest = data_dir / item.name
-            if dest.exists():
-                if dest.is_dir():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            shutil.move(str(item), str(dest))
-    elif (tmp / COMPETITION / "Train").is_dir():
-        nested = tmp / COMPETITION
-        for item in nested.iterdir():
-            dest = data_dir / item.name
-            if dest.exists():
-                if dest.is_dir():
-                    shutil.rmtree(dest)
-                else:
-                    dest.unlink()
-            shutil.move(str(item), str(dest))
-    else:
-        print("ERROR: unexpected zip layout. Inspect datasets_tmp/ and move into datasets/")
-        print(f"  Contents: {[p.name for p in tmp.iterdir()]}")
-        return
+        return tmp
+    nested = tmp / COMPETITION
+    if (nested / "Train").is_dir():
+        return nested
+    return None
 
-    shutil.rmtree(tmp, ignore_errors=True)
+
+def _validate_layout_root(root: Path) -> None:
+    missing = []
+    for name in REQUIRED_DIRS:
+        if not (root / name).is_dir():
+            missing.append(name)
+    for name in REQUIRED_FILES:
+        if not (root / name).is_file():
+            missing.append(name)
+    if missing:
+        raise ValueError(f"Extracted layout missing: {missing}")
+
+
+def _install_layout_root(layout_root: Path, data_dir: Path) -> None:
+    data_dir.mkdir(parents=True, exist_ok=True)
+    for item in layout_root.iterdir():
+        dest = data_dir / item.name
+        if dest.exists():
+            if dest.is_dir():
+                shutil.rmtree(dest)
+            else:
+                dest.unlink()
+        shutil.move(str(item), str(dest))
+
+
+def _extract_zip(zip_path: Path, data_dir: Path, force: bool = False) -> int:
+    if check_dataset_exists(data_dir) and not force:
+        print(f"Dataset already at {data_dir} — skip extract (use --force-download to replace)")
+        return 0
+
+    tmp = Path(tempfile.mkdtemp(prefix="fp_extract_", dir=str(ROOT)))
+    try:
+        print(f"Extracting {zip_path} -> temp {tmp} ...")
+        _safe_extract_zip(zip_path, tmp)
+        layout_root = _find_extract_layout_root(tmp)
+        if layout_root is None:
+            print("ERROR: unexpected zip layout.")
+            print(f"  Contents: {[p.name for p in tmp.iterdir()]}")
+            return 1
+        _validate_layout_root(layout_root)
+
+        if data_dir.exists() and any(data_dir.iterdir()):
+            if not force:
+                print("ERROR: datasets/ not empty. Use --force-download to replace.")
+                return 1
+            shutil.rmtree(data_dir)
+
+        _install_layout_root(layout_root, data_dir)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     if zip_path.is_file():
         zip_path.unlink()
         print(f"Removed {zip_path}")
+    return 0
 
 
 def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
@@ -290,7 +340,8 @@ def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
         return 1
     print(f"Downloaded: {zip_path} ({zip_path.stat().st_size / 1e9:.2f} GB)")
 
-    _extract_zip(zip_path, data_dir)
+    if _extract_zip(zip_path, data_dir, force=force) != 0:
+        return 1
 
     if not check_dataset_exists(data_dir):
         print("ERROR: dataset still incomplete after extract.")

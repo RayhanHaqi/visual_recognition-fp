@@ -3,13 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# Prefer course conda env when available
-if [[ -z "${CONDA_DEFAULT_ENV:-}" || "${CONDA_DEFAULT_ENV}" != "visualrecognition" ]]; then
-  if command -v conda &>/dev/null; then
-    source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || true
-    conda activate visualrecognition 2>/dev/null || true
-  fi
-fi
+# shellcheck disable=SC1091
+source scripts/conda_env.sh
 
 BACKBONE=${1:-resnet50}
 EPOCHS=${2:-30}

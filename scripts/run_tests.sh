@@ -3,11 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if command -v conda &>/dev/null; then
-  # shellcheck disable=SC1091
-  source "$(conda info --base)/etc/profile.d/conda.sh" 2>/dev/null || true
-  conda activate visualrecognition 2>/dev/null || true
-fi
+# shellcheck disable=SC1091
+source "$(dirname "$0")/conda_env.sh"
 
 export PYTHONPATH="${PWD}"
 unset AMENT_PREFIX_PATH COLCON_PREFIX_PATH ROS_DISTRO ROS_VERSION 2>/dev/null || true

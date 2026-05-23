@@ -9,7 +9,7 @@ NYCU Visual Recognition (2026 Spring), Topic 3: predict five sea-lion class coun
 ```bash
 git clone <your-repo-url> FP
 cd FP
-conda activate visualrecognition   # same env as HW1–HW4
+conda activate selectedtopics_env   # or: export FP_CONDA_ENV=visualrecognition
 ```
 
 1. **Kaggle API** — join the [competition](https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count), then add credentials **inside this repo** (recommended on shared lab PCs):
@@ -51,6 +51,15 @@ Full pipeline (recommended):
 ```bash
 bash scripts/run_phase1.sh 0    # GPU id, default 0
 ```
+
+Resume without repeating finished steps:
+
+```bash
+SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 SKIP_SMOKE=1 \
+  bash scripts/run_phase1.sh 0
+```
+
+**Prediction contract:** model outputs per-tile counts; image-level prediction = **sum** of unique tile windows (`data/predict.py`, used by train val / `validate.py` / `inference.py`).
 
 Or step by step:
 

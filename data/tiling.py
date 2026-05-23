@@ -16,6 +16,9 @@ class TileWindow:
     y1: int
     shift_idx: int = 0
 
+    def key(self) -> tuple[int, int, int, int, int]:
+        return (self.x0, self.y0, self.x1, self.y1, self.shift_idx)
+
 
 def iter_tile_windows(
     width: int,
@@ -25,36 +28,57 @@ def iter_tile_windows(
     shifts: int = 1,
 ) -> Iterator[TileWindow]:
     """
-    Yield tile windows covering the image.
+    Yield unique tile windows covering the image (no duplicate coordinates per shift).
     shifts: number of staggered grids (1 = single grid, up to 5 for TTA).
     """
-    stride = stride or tile_size
+    stride = max(1, stride or tile_size)
+    ts = tile_size
+
     for shift_idx in range(max(1, shifts)):
-        ox = (shift_idx * stride // max(1, shifts)) % max(1, stride)
-        oy = (shift_idx * stride // (2 * max(1, shifts))) % max(1, stride)
+        ox = (shift_idx * stride // max(1, shifts)) % stride
+        oy = (shift_idx * stride // (2 * max(1, shifts))) % stride
+        seen: set[tuple[int, int, int, int, int]] = set()
+        candidates: list[TileWindow] = []
+
         y = 0
         while y < height:
             x = 0
             while x < width:
-                x0 = min(x + ox, max(0, width - tile_size))
-                y0 = min(y + oy, max(0, height - tile_size))
-                x1 = min(x0 + tile_size, width)
-                y1 = min(y0 + tile_size, height)
-                if x1 - x0 < tile_size // 2 or y1 - y0 < tile_size // 2:
-                    x += stride
-                    continue
-                yield TileWindow(x0, y0, x1, y1, shift_idx)
+                x0 = min(x + ox, max(0, width - ts))
+                y0 = min(y + oy, max(0, height - ts))
+                x1 = min(x0 + ts, width)
+                y1 = min(y0 + ts, height)
+                if x1 - x0 >= ts // 2 and y1 - y0 >= ts // 2:
+                    candidates.append(TileWindow(x0, y0, x1, y1, shift_idx))
                 x += stride
             y += stride
-        # trailing edge tiles
-        if width >= tile_size:
-            yield TileWindow(width - tile_size, max(0, min(oy, height - tile_size)),
-                             width, min(tile_size + max(0, min(oy, height - tile_size)), height),
-                             shift_idx)
-        if height >= tile_size:
-            yield TileWindow(max(0, min(ox, width - tile_size)), height - tile_size,
-                             min(tile_size + max(0, min(ox, width - tile_size)), width), height,
-                             shift_idx)
+
+        if width >= ts:
+            candidates.append(
+                TileWindow(
+                    width - ts,
+                    max(0, min(oy, height - ts)),
+                    width,
+                    min(ts + max(0, min(oy, height - ts)), height),
+                    shift_idx,
+                )
+            )
+        if height >= ts:
+            candidates.append(
+                TileWindow(
+                    max(0, min(ox, width - ts)),
+                    height - ts,
+                    min(ts + max(0, min(ox, width - ts)), width),
+                    height,
+                    shift_idx,
+                )
+            )
+
+        for win in candidates:
+            k = win.key()
+            if k not in seen:
+                seen.add(k)
+                yield win
 
 
 def tile_area_fraction(window: TileWindow, width: int, height: int) -> float:
@@ -68,25 +92,32 @@ def aggregate_tile_predictions(
     windows: list[TileWindow],
     image_width: int,
     image_height: int,
-    mode: str = "area_weighted",
+    mode: str = "sum",
 ) -> np.ndarray:
     """
     Combine per-tile 5-d count predictions into one image-level vector.
+    Default mode "sum" matches training contract (tile targets scale with area;
+    summing tile predictions estimates image totals).
     """
     if not preds:
         return np.zeros(5, dtype=np.float32)
+    if len(preds) != len(windows):
+        raise ValueError(f"preds ({len(preds)}) and windows ({len(windows)}) length mismatch")
 
     stacked = np.stack([np.asarray(p, dtype=np.float64).reshape(5) for p in preds], axis=0)
     if mode == "sum":
         return np.maximum(stacked.sum(axis=0), 0).astype(np.float32)
 
-    weights = np.array(
-        [tile_area_fraction(w, image_width, image_height) for w in windows],
-        dtype=np.float64,
-    )
-    if weights.sum() <= 0:
-        weights = np.ones(len(weights)) / len(weights)
-    else:
-        weights /= weights.sum()
-    out = (stacked * weights[:, None]).sum(axis=0)
-    return np.maximum(out, 0).astype(np.float32)
+    if mode == "area_weighted":
+        weights = np.array(
+            [tile_area_fraction(w, image_width, image_height) for w in windows],
+            dtype=np.float64,
+        )
+        if weights.sum() <= 0:
+            weights = np.ones(len(weights)) / len(weights)
+        else:
+            weights /= weights.sum()
+        out = (stacked * weights[:, None]).sum(axis=0)
+        return np.maximum(out, 0).astype(np.float32)
+
+    raise ValueError(f"Unknown aggregation mode: {mode}")
