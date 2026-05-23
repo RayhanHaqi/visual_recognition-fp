@@ -18,7 +18,10 @@ DATA_DIR = ROOT / "datasets"
 # Workspace-local credentials (gitignored) — preferred on shared lab PCs
 WORKSPACE_KAGGLE_DIR = ROOT / ".kaggle"
 COMPETITION = "noaa-fisheries-steller-sea-lion-population-count"
-ZIP_NAME = f"{COMPETITION}.zip"
+MAIN_ARCHIVE = "KaggleNOAASeaLions.7z"  # ~96 GB compressed on Kaggle
+SMALL_ARCHIVE = "TrainSmall2.7z"  # ~99 MB dev subset
+PASSWORD_FILE = "data_password.txt"
+MISMATCHED_FILE = "MismatchedTrainImages.txt"
 MIN_FREE_GB = 110
 
 REQUIRED_DIRS = ["Train", "TrainDotted", "Test"]
@@ -127,11 +130,27 @@ def _kaggle_executable() -> str:
 
 
 def _find_downloaded_zip(dest: Path) -> Path | None:
-    for candidate in (dest / ZIP_NAME, dest / f"{COMPETITION}.zip"):
-        if candidate.is_file():
-            return candidate
+    """Legacy zip bundle (not used for this competition)."""
     zips = [p for p in dest.glob("*.zip") if p.is_file()]
     return zips[0] if len(zips) == 1 else None
+
+
+def _archive_path(dest: Path, filename: str) -> Path:
+    p = dest / filename
+    if p.is_file():
+        return p
+    matches = [m for m in dest.glob(f"*{filename}*") if m.is_file()]
+    return matches[0] if len(matches) == 1 else p
+
+
+def _find_7z_binary() -> str | None:
+    import shutil
+
+    for name in ("7z", "7za", "7zr"):
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
 
 
 def _tqdm(*args, **kwargs):
@@ -142,38 +161,26 @@ def _tqdm(*args, **kwargs):
     return tqdm(*args, **kwargs)
 
 
-def _zip_size(dest: Path) -> tuple[Path | None, int]:
-    z = _find_downloaded_zip(dest)
-    if z and z.is_file():
-        return z, z.stat().st_size
-    return None, 0
-
-
-def _monitor_download_progress(dest: Path, done, poll_interval: float = 1.0) -> int:
-    """
-    Show a byte progress bar by watching the zip file grow.
-    `done` is a callable returning True when the background download finished.
-    """
-    dest.mkdir(parents=True, exist_ok=True)
-    print(
-        "Download started. Kaggle may take several minutes before the zip file appears.",
-        flush=True,
-    )
-    last_size = -1
+def _monitor_file_progress(
+    file_path: Path,
+    done,
+    poll_interval: float = 1.0,
+    wait_msg: str = "waiting for download to start",
+) -> int:
+    file_path.parent.mkdir(parents=True, exist_ok=True)
     idle_ticks = 0
+    last_size = -1
     with _tqdm(
-        desc="Downloading",
+        desc=f"Downloading {file_path.name}",
         unit="B",
         unit_scale=True,
         unit_divisor=1024,
         mininterval=0.5,
     ) as bar:
         while not done():
-            zpath, size = _zip_size(dest)
-            if size > 0:
+            if file_path.is_file():
+                size = file_path.stat().st_size
                 bar.n = size
-                if zpath:
-                    bar.set_postfix_str(zpath.name, refresh=False)
                 bar.refresh()
                 if size != last_size:
                     last_size = size
@@ -183,35 +190,31 @@ def _monitor_download_progress(dest: Path, done, poll_interval: float = 1.0) -> 
             else:
                 idle_ticks += 1
                 if idle_ticks == 1 or idle_ticks % 30 == 0:
-                    print(
-                        "  … waiting for Kaggle (preparing archive, no file yet)",
-                        flush=True,
-                    )
+                    print(f"  … {wait_msg}", flush=True)
             time.sleep(poll_interval)
-
-        zpath, size = _zip_size(dest)
-        if size > 0:
-            bar.n = size
+        if file_path.is_file():
+            bar.n = file_path.stat().st_size
             bar.refresh()
     return 0
 
 
-def _run_kaggle_download_cli(dest: Path) -> int:
-    """kaggle CLI + zip file size progress bar (works without TTY tqdm from API)."""
+def _download_kaggle_file(filename: str, dest: Path) -> int:
+    """Download one competition file via kaggle CLI (-f), with byte progress."""
+    dest.mkdir(parents=True, exist_ok=True)
+    out_path = _archive_path(dest, filename)
     cmd = [
         _kaggle_executable(),
         "competitions",
         "download",
         "-c",
         COMPETITION,
+        "-f",
+        filename,
         "-p",
         str(dest),
     ]
     print(f"Running: {' '.join(cmd)}", flush=True)
     env = kaggle_subprocess_env()
-    if env.get("KAGGLE_CONFIG_DIR"):
-        print(f"  KAGGLE_CONFIG_DIR={env['KAGGLE_CONFIG_DIR']}", flush=True)
-
     proc = subprocess.Popen(
         cmd,
         cwd=ROOT,
@@ -219,56 +222,52 @@ def _run_kaggle_download_cli(dest: Path) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-
-    rc = _monitor_download_progress(dest, lambda: proc.poll() is not None)
-    if proc.returncode not in (None, 0):
-        print(f"Kaggle CLI failed (exit {proc.returncode})", flush=True)
+    _monitor_file_progress(
+        out_path,
+        lambda: proc.poll() is not None,
+        wait_msg=f"waiting for {filename} (Kaggle may take a few minutes)",
+    )
+    if proc.returncode != 0:
+        print(f"Download failed for {filename} (exit {proc.returncode})", flush=True)
         return proc.returncode or 1
-    return rc
-
-
-def _run_kaggle_download_api(dest: Path) -> int:
-    """Kaggle Python API in a thread + same zip-size progress monitor."""
-    import threading
-
-    apply_kaggle_config_env()
-    from kaggle.api.kaggle_api_extended import KaggleApi
-
-    dest.mkdir(parents=True, exist_ok=True)
-    cfg = os.environ.get("KAGGLE_CONFIG_DIR")
-    if cfg:
-        print(f"  KAGGLE_CONFIG_DIR={cfg}", flush=True)
-
-    state = {"error": None}
-
-    def _worker():
-        try:
-            print("  Authenticating with Kaggle API...", flush=True)
-            api = KaggleApi()
-            api.authenticate()
-            print("  Requesting competition archive...", flush=True)
-            api.competition_download_files(
-                COMPETITION, path=str(dest), force=False, quiet=True
-            )
-        except Exception as e:
-            state["error"] = e
-
-    thread = threading.Thread(target=_worker, daemon=True)
-    thread.start()
-    _monitor_download_progress(dest, lambda: not thread.is_alive())
-    thread.join()
-    if state["error"]:
-        raise state["error"]
+    if not out_path.is_file():
+        print(f"ERROR: {filename} not found in {dest} after download.", flush=True)
+        return 1
+    sz = out_path.stat().st_size
+    sz_str = f"{sz / 1e9:.2f} GB" if sz > 1e9 else f"{sz / 1e6:.1f} MB"
+    print(f"Downloaded {out_path.name} ({sz_str})", flush=True)
     return 0
 
 
-def _run_kaggle_download(dest: Path) -> int:
-    # CLI + file-size bar is reliable on lab servers; API tqdm is often invisible.
-    try:
-        return _run_kaggle_download_cli(dest)
-    except Exception as e:
-        print(f"CLI download failed ({e}); trying Kaggle API...", flush=True)
-        return _run_kaggle_download_api(dest)
+def _read_archive_password(pwd_file: Path) -> str:
+    if not pwd_file.is_file():
+        raise FileNotFoundError(
+            f"Missing {pwd_file}. Run download for {PASSWORD_FILE} first."
+        )
+    return pwd_file.read_text().strip()
+
+
+def _extract_7z(archive: Path, dest_dir: Path, password: str) -> None:
+    seven_zip = _find_7z_binary()
+    if seven_zip is None:
+        raise RuntimeError(
+            "7z not found. Install p7zip-full:\n"
+            "  sudo apt install p7zip-full"
+        )
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [seven_zip, "x", str(archive), f"-o{dest_dir}", f"-p{password}", "-y"]
+    print(f"Extracting {archive.name} with {seven_zip} ...", flush=True)
+    print("(This can take 30–60+ minutes for the full dataset.)", flush=True)
+    rc = subprocess.run(cmd, cwd=ROOT).returncode
+    if rc != 0:
+        raise RuntimeError(f"7z extract failed with exit code {rc}")
+
+
+def _run_kaggle_download(dest: Path, archive_name: str) -> int:
+    """Download password file + main .7z archive."""
+    if _download_kaggle_file(PASSWORD_FILE, dest) != 0:
+        return 1
+    return _download_kaggle_file(archive_name, dest)
 
 
 def _is_safe_zip_member(name: str) -> bool:
@@ -297,6 +296,9 @@ def _safe_extract_zip(zip_path: Path, dest_dir: Path) -> None:
 def _find_extract_layout_root(tmp: Path) -> Path | None:
     if (tmp / "Train").is_dir():
         return tmp
+    for child in tmp.iterdir():
+        if child.is_dir() and (child / "Train").is_dir():
+            return child
     nested = tmp / COMPETITION
     if (nested / "Train").is_dir():
         return nested
@@ -325,6 +327,44 @@ def _install_layout_root(layout_root: Path, data_dir: Path) -> None:
             else:
                 dest.unlink()
         shutil.move(str(item), str(dest))
+
+
+def _extract_archive(archive_path: Path, data_dir: Path, force: bool = False) -> int:
+    if check_dataset_exists(data_dir) and not force:
+        print(f"Dataset already at {data_dir} — skip extract (use --force-download to replace)")
+        return 0
+
+    pwd_file = ROOT / PASSWORD_FILE
+    try:
+        password = _read_archive_password(pwd_file)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}")
+        return 1
+
+    tmp = Path(tempfile.mkdtemp(prefix="fp_extract_", dir=str(ROOT)))
+    try:
+        _extract_7z(archive_path, tmp, password)
+        layout_root = _find_extract_layout_root(tmp)
+        if layout_root is None:
+            print("ERROR: unexpected archive layout.")
+            print(f"  Contents: {[p.name for p in tmp.iterdir()]}")
+            return 1
+        _validate_layout_root(layout_root)
+
+        if data_dir.exists() and any(data_dir.iterdir()):
+            if not force:
+                print("ERROR: datasets/ not empty. Use --force-download to replace.")
+                return 1
+            shutil.rmtree(data_dir)
+
+        _install_layout_root(layout_root, data_dir)
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        return 1
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return 0
 
 
 def _extract_zip(zip_path: Path, data_dir: Path, force: bool = False) -> int:
@@ -359,17 +399,23 @@ def _extract_zip(zip_path: Path, data_dir: Path, force: bool = False) -> int:
     return 0
 
 
-def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
+def download_dataset(
+    data_dir: Path = DATA_DIR, force: bool = False, small: bool = False
+) -> int:
     if check_dataset_exists(data_dir) and not force:
         s = dataset_summary(data_dir)
         print(f"Dataset already complete at {data_dir}")
         print(f"  Train: {s.get('n_train', '?')} images, Test: {s.get('n_test', '?')} images")
         return 0
 
+    archive_name = SMALL_ARCHIVE if small else MAIN_ARCHIVE
+    archive_hint = "~99 MB" if small else "~96 GB compressed (~103 GB unpacked)"
+
     ok, free_gb = check_disk_space(ROOT)
     print(f"Free disk on {ROOT.anchor or '/'}: {free_gb:.1f} GB")
-    if not ok:
-        print(f"ERROR: need at least {MIN_FREE_GB} GB free for download + extract.")
+    min_gb = 5 if small else MIN_FREE_GB
+    if free_gb < min_gb:
+        print(f"ERROR: need at least {min_gb} GB free for download + extract.")
         return 1
 
     if not check_kaggle_credentials():
@@ -390,20 +436,32 @@ def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
         )
 
     data_dir.mkdir(parents=True, exist_ok=True)
+    cfg = resolve_kaggle_config_dir()
+    if cfg:
+        print(f"  KAGGLE_CONFIG_DIR={cfg}", flush=True)
 
-    print(f"\nDownloading {COMPETITION} (~103 GB)...", flush=True)
-    print("Progress bar writes to stderr; status lines below.", flush=True)
-    rc = _run_kaggle_download(ROOT)
+    print(
+        f"\nDownloading {archive_name} ({archive_hint}) ...",
+        flush=True,
+    )
+    print(
+        "Note: this competition uses a password-protected .7z, not a zip bundle.",
+        flush=True,
+    )
+
+    rc = _run_kaggle_download(ROOT, archive_name)
     if rc != 0:
         return rc
 
-    zip_path = _find_downloaded_zip(ROOT)
-    if zip_path is None:
-        print(f"ERROR: no .zip found in {ROOT} after download.")
+    archive_path = _archive_path(ROOT, archive_name)
+    if not archive_path.is_file():
+        print(f"ERROR: missing {archive_name} after download.")
         return 1
-    print(f"Downloaded: {zip_path} ({zip_path.stat().st_size / 1e9:.2f} GB)")
 
-    if _extract_zip(zip_path, data_dir, force=force) != 0:
+    if _download_kaggle_file(MISMATCHED_FILE, data_dir) != 0:
+        print(f"WARNING: could not download {MISMATCHED_FILE}; may exist inside archive.")
+
+    if _extract_archive(archive_path, data_dir, force=force) != 0:
         return 1
 
     if not check_dataset_exists(data_dir):
@@ -459,7 +517,12 @@ def parse_args():
     p.add_argument(
         "--download",
         action="store_true",
-        help="Download and extract Kaggle competition data into datasets/",
+        help="Download KaggleNOAASeaLions.7z + extract into datasets/",
+    )
+    p.add_argument(
+        "--small-download",
+        action="store_true",
+        help=f"Download {SMALL_ARCHIVE} (~99 MB) for pipeline smoke test only",
     )
     p.add_argument(
         "--preprocess",
@@ -499,8 +562,10 @@ def main() -> int:
     if args.install:
         rc = install_requirements() or rc
 
-    if args.download:
-        rc = download_dataset(data_dir, force=args.force_download) or rc
+    if args.download or args.small_download:
+        rc = download_dataset(
+            data_dir, force=args.force_download, small=args.small_download
+        ) or rc
 
     if args.preprocess:
         if not check_dataset_exists(data_dir):

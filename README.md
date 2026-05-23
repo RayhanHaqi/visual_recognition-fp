@@ -23,13 +23,20 @@ conda activate selectedtopics_env   # or: export FP_CONDA_ENV=visualrecognition
    `.kaggle/` is gitignored — safe to clone the repo; do not commit `kaggle.json`.  
    Alternative: `~/.kaggle/kaggle.json` on a private machine only.
 
-2. **Install + download + preprocess** (needs **≥110 GB** free disk):
+2. **Install + download + preprocess** (needs **≥110 GB** free disk; dataset is **`KaggleNOAASeaLions.7z`**, not a zip):
 
 ```bash
+sudo apt install p7zip-full    # once, for 7z extract
 python setup.py --install
-python setup.py --download      # ~103 GB, may take hours
-python setup.py --preprocess    # remove mismatched train images
-python setup.py                 # verify layout
+python setup.py --download      # downloads .7z (~96 GB) + extracts with password file
+python setup.py --preprocess
+python setup.py
+```
+
+Smoke test with tiny subset (~99 MB):
+
+```bash
+python setup.py --small-download
 ```
 
 Or one flag at a time after clone:
