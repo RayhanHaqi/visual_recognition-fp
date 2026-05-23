@@ -134,32 +134,70 @@ def _find_downloaded_zip(dest: Path) -> Path | None:
     return zips[0] if len(zips) == 1 else None
 
 
-def _run_kaggle_download_api(dest: Path) -> int:
-    """Use Kaggle Python API (shows tqdm byte progress when quiet=False)."""
-    apply_kaggle_config_env()
-    from kaggle.api.kaggle_api_extended import KaggleApi
-
-    dest.mkdir(parents=True, exist_ok=True)
-    cfg = os.environ.get("KAGGLE_CONFIG_DIR")
-    if cfg:
-        print(f"  KAGGLE_CONFIG_DIR={cfg}")
-
-    api = KaggleApi()
-    api.authenticate()
-    api.competition_download_files(
-        COMPETITION, path=str(dest), force=False, quiet=False
-    )
-    return 0
-
-
 def _tqdm(*args, **kwargs):
     from tqdm import tqdm
 
+    kwargs.setdefault("file", sys.stderr)
+    kwargs.setdefault("dynamic_ncols", True)
     return tqdm(*args, **kwargs)
 
 
+def _zip_size(dest: Path) -> tuple[Path | None, int]:
+    z = _find_downloaded_zip(dest)
+    if z and z.is_file():
+        return z, z.stat().st_size
+    return None, 0
+
+
+def _monitor_download_progress(dest: Path, done, poll_interval: float = 1.0) -> int:
+    """
+    Show a byte progress bar by watching the zip file grow.
+    `done` is a callable returning True when the background download finished.
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    print(
+        "Download started. Kaggle may take several minutes before the zip file appears.",
+        flush=True,
+    )
+    last_size = -1
+    idle_ticks = 0
+    with _tqdm(
+        desc="Downloading",
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        mininterval=0.5,
+    ) as bar:
+        while not done():
+            zpath, size = _zip_size(dest)
+            if size > 0:
+                bar.n = size
+                if zpath:
+                    bar.set_postfix_str(zpath.name, refresh=False)
+                bar.refresh()
+                if size != last_size:
+                    last_size = size
+                    idle_ticks = 0
+                else:
+                    idle_ticks += 1
+            else:
+                idle_ticks += 1
+                if idle_ticks == 1 or idle_ticks % 30 == 0:
+                    print(
+                        "  … waiting for Kaggle (preparing archive, no file yet)",
+                        flush=True,
+                    )
+            time.sleep(poll_interval)
+
+        zpath, size = _zip_size(dest)
+        if size > 0:
+            bar.n = size
+            bar.refresh()
+    return 0
+
+
 def _run_kaggle_download_cli(dest: Path) -> int:
-    """Fallback: kaggle CLI + monitor zip file size with tqdm."""
+    """kaggle CLI + zip file size progress bar (works without TTY tqdm from API)."""
     cmd = [
         _kaggle_executable(),
         "competitions",
@@ -169,44 +207,68 @@ def _run_kaggle_download_cli(dest: Path) -> int:
         "-p",
         str(dest),
     ]
-    print(f"Running: {' '.join(cmd)}")
+    print(f"Running: {' '.join(cmd)}", flush=True)
     env = kaggle_subprocess_env()
     if env.get("KAGGLE_CONFIG_DIR"):
-        print(f"  KAGGLE_CONFIG_DIR={env['KAGGLE_CONFIG_DIR']}")
+        print(f"  KAGGLE_CONFIG_DIR={env['KAGGLE_CONFIG_DIR']}", flush=True)
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    rc = _monitor_download_progress(dest, lambda: proc.poll() is not None)
+    if proc.returncode not in (None, 0):
+        print(f"Kaggle CLI failed (exit {proc.returncode})", flush=True)
+        return proc.returncode or 1
+    return rc
+
+
+def _run_kaggle_download_api(dest: Path) -> int:
+    """Kaggle Python API in a thread + same zip-size progress monitor."""
+    import threading
+
+    apply_kaggle_config_env()
+    from kaggle.api.kaggle_api_extended import KaggleApi
 
     dest.mkdir(parents=True, exist_ok=True)
-    zip_guess = dest / ZIP_NAME
-    proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
-    with _tqdm(
-        desc="Downloading",
-        unit="B",
-        unit_scale=True,
-        unit_divisor=1024,
-        dynamic_ncols=True,
-    ) as bar:
-        while proc.poll() is None:
-            z = _find_downloaded_zip(dest) or zip_guess
-            if z.is_file():
-                bar.n = z.stat().st_size
-                bar.set_postfix_str(z.name, refresh=False)
-                bar.refresh()
-            time.sleep(2.0)
-        if proc.returncode != 0:
-            bar.close()
-            return proc.returncode
-        z = _find_downloaded_zip(dest)
-        if z and z.is_file():
-            bar.n = z.stat().st_size
-            bar.refresh()
-    return proc.returncode
+    cfg = os.environ.get("KAGGLE_CONFIG_DIR")
+    if cfg:
+        print(f"  KAGGLE_CONFIG_DIR={cfg}", flush=True)
+
+    state = {"error": None}
+
+    def _worker():
+        try:
+            print("  Authenticating with Kaggle API...", flush=True)
+            api = KaggleApi()
+            api.authenticate()
+            print("  Requesting competition archive...", flush=True)
+            api.competition_download_files(
+                COMPETITION, path=str(dest), force=False, quiet=True
+            )
+        except Exception as e:
+            state["error"] = e
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    _monitor_download_progress(dest, lambda: not thread.is_alive())
+    thread.join()
+    if state["error"]:
+        raise state["error"]
+    return 0
 
 
 def _run_kaggle_download(dest: Path) -> int:
+    # CLI + file-size bar is reliable on lab servers; API tqdm is often invisible.
     try:
-        return _run_kaggle_download_api(dest)
-    except Exception as e:
-        print(f"Kaggle API download failed ({e}); trying CLI fallback...")
         return _run_kaggle_download_cli(dest)
+    except Exception as e:
+        print(f"CLI download failed ({e}); trying Kaggle API...", flush=True)
+        return _run_kaggle_download_api(dest)
 
 
 def _is_safe_zip_member(name: str) -> bool:
@@ -329,7 +391,8 @@ def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
 
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\nDownloading {COMPETITION} (~103 GB) — progress bar below...")
+    print(f"\nDownloading {COMPETITION} (~103 GB)...", flush=True)
+    print("Progress bar writes to stderr; status lines below.", flush=True)
     rc = _run_kaggle_download(ROOT)
     if rc != 0:
         return rc
