@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
+
+from tqdm import tqdm
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "datasets"
@@ -82,13 +86,18 @@ def check_kaggle_credentials() -> bool:
 
 def kaggle_subprocess_env() -> dict:
     """Env for kaggle CLI: prefer workspace .kaggle/ on shared machines."""
-    import os
-
     env = os.environ.copy()
     cfg = resolve_kaggle_config_dir()
     if cfg is not None:
         env["KAGGLE_CONFIG_DIR"] = str(cfg)
     return env
+
+
+def apply_kaggle_config_env() -> None:
+    """Set KAGGLE_CONFIG_DIR in os.environ before KaggleApi.authenticate()."""
+    cfg = resolve_kaggle_config_dir()
+    if cfg is not None:
+        os.environ["KAGGLE_CONFIG_DIR"] = str(cfg)
 
 
 def install_requirements() -> int:
@@ -118,7 +127,34 @@ def _kaggle_executable() -> str:
     )
 
 
-def _run_kaggle_download(dest: Path) -> int:
+def _find_downloaded_zip(dest: Path) -> Path | None:
+    for candidate in (dest / ZIP_NAME, dest / f"{COMPETITION}.zip"):
+        if candidate.is_file():
+            return candidate
+    zips = [p for p in dest.glob("*.zip") if p.is_file()]
+    return zips[0] if len(zips) == 1 else None
+
+
+def _run_kaggle_download_api(dest: Path) -> int:
+    """Use Kaggle Python API (shows tqdm byte progress when quiet=False)."""
+    apply_kaggle_config_env()
+    from kaggle.api.kaggle_api_extended import KaggleApi
+
+    dest.mkdir(parents=True, exist_ok=True)
+    cfg = os.environ.get("KAGGLE_CONFIG_DIR")
+    if cfg:
+        print(f"  KAGGLE_CONFIG_DIR={cfg}")
+
+    api = KaggleApi()
+    api.authenticate()
+    api.competition_download_files(
+        COMPETITION, path=str(dest), force=False, quiet=False
+    )
+    return 0
+
+
+def _run_kaggle_download_cli(dest: Path) -> int:
+    """Fallback: kaggle CLI + monitor zip file size with tqdm."""
     cmd = [
         _kaggle_executable(),
         "competitions",
@@ -129,10 +165,43 @@ def _run_kaggle_download(dest: Path) -> int:
         str(dest),
     ]
     print(f"Running: {' '.join(cmd)}")
-    cfg = resolve_kaggle_config_dir()
-    if cfg:
-        print(f"  KAGGLE_CONFIG_DIR={cfg}")
-    return subprocess.run(cmd, cwd=ROOT, env=kaggle_subprocess_env()).returncode
+    env = kaggle_subprocess_env()
+    if env.get("KAGGLE_CONFIG_DIR"):
+        print(f"  KAGGLE_CONFIG_DIR={env['KAGGLE_CONFIG_DIR']}")
+
+    dest.mkdir(parents=True, exist_ok=True)
+    zip_guess = dest / ZIP_NAME
+    proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
+    with tqdm(
+        desc="Downloading",
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        dynamic_ncols=True,
+    ) as bar:
+        while proc.poll() is None:
+            z = _find_downloaded_zip(dest) or zip_guess
+            if z.is_file():
+                bar.n = z.stat().st_size
+                bar.set_postfix_str(z.name, refresh=False)
+                bar.refresh()
+            time.sleep(2.0)
+        if proc.returncode != 0:
+            bar.close()
+            return proc.returncode
+        z = _find_downloaded_zip(dest)
+        if z and z.is_file():
+            bar.n = z.stat().st_size
+            bar.refresh()
+    return proc.returncode
+
+
+def _run_kaggle_download(dest: Path) -> int:
+    try:
+        return _run_kaggle_download_api(dest)
+    except Exception as e:
+        print(f"Kaggle API download failed ({e}); trying CLI fallback...")
+        return _run_kaggle_download_cli(dest)
 
 
 def _extract_zip(zip_path: Path, data_dir: Path) -> None:
@@ -143,7 +212,9 @@ def _extract_zip(zip_path: Path, data_dir: Path) -> None:
 
     print(f"Extracting {zip_path} ...")
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(tmp)
+        members = zf.infolist()
+        for info in tqdm(members, desc="Extracting", unit="file"):
+            zf.extract(info, tmp)
 
     data_dir.mkdir(parents=True, exist_ok=True)
     if (tmp / "Train").is_dir():
@@ -207,21 +278,17 @@ def download_dataset(data_dir: Path = DATA_DIR, force: bool = False) -> int:
         )
 
     data_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = ROOT / ZIP_NAME
 
-    print(f"\nDownloading {COMPETITION} (~103 GB) — this may take a long time...")
+    print(f"\nDownloading {COMPETITION} (~103 GB) — progress bar below...")
     rc = _run_kaggle_download(ROOT)
     if rc != 0:
         return rc
 
-    if not zip_path.is_file():
-        # Kaggle may write to cwd with different casing
-        zips = list(ROOT.glob("*.zip"))
-        if len(zips) == 1:
-            zip_path = zips[0]
-        else:
-            print(f"ERROR: expected {zip_path} after download.")
-            return 1
+    zip_path = _find_downloaded_zip(ROOT)
+    if zip_path is None:
+        print(f"ERROR: no .zip found in {ROOT} after download.")
+        return 1
+    print(f"Downloaded: {zip_path} ({zip_path.stat().st_size / 1e9:.2f} GB)")
 
     _extract_zip(zip_path, data_dir)
 
