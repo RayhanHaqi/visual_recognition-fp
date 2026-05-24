@@ -2,122 +2,120 @@
 
 NYCU Visual Recognition (2026 Spring), Topic 3: predict five sea-lion class counts per image; evaluated by **RMSE** on Kaggle.
 
-**Workflow:** Develop and commit code on your machine; **train and submit on the lab PC** (e.g. RTX 5090). `datasets/` and `checkpoints/` are gitignored and stay on the lab machine only.
+**Workflow:** Code on git; **train and download on the lab PC** (e.g. w61). `datasets/` and `checkpoints/` are gitignored.
 
-## Lab machine — first-time setup
+**Full lab walkthrough:** [docs/LAB_SETUP.md](docs/LAB_SETUP.md)
+
+---
+
+## Lab PC — quick start
 
 ```bash
-git clone <your-repo-url> FP
+git clone https://github.com/RayhanHaqi/visual_recognition-fp.git FP
 cd FP
-conda activate selectedtopics_env   # or: export FP_CONDA_ENV=visualrecognition
+conda activate selectedtopics_env
+
+mkdir -p .kaggle
+cp /path/to/kaggle.json .kaggle/kaggle.json    # copy manually; never commit
+chmod 600 .kaggle/kaggle.json
+
+source scripts/kaggle_env.sh
+kaggle competitions files -c noaa-fisheries-steller-sea-lion-population-count   # must not 401
+
+sudo apt install p7zip-full    # once
 ```
 
-1. **Kaggle API** — join the [competition](https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count), then add credentials **inside this repo** (recommended on shared lab PCs):
-
-   ```bash
-   mkdir -p .kaggle
-   cp ~/Downloads/kaggle.json .kaggle/kaggle.json
-   chmod 600 .kaggle/kaggle.json
-   ```
-
-   `.kaggle/` is gitignored — safe to clone the repo; do not commit `kaggle.json`.  
-   Alternative: `~/.kaggle/kaggle.json` on a private machine only.
-
-2. **Install + download + preprocess** (needs **≥110 GB** free disk; dataset is **`KaggleNOAASeaLions.7z`**, not a zip):
+### Download (~96 GB, use `nohup`)
 
 ```bash
-sudo apt install p7zip-full    # once, for 7z extract
-python setup.py --install
-python setup.py --download      # downloads .7z (~96 GB) + extracts with password file
+cd FP
+source scripts/kaggle_env.sh
+
+nohup kaggle competitions download \
+  -c noaa-fisheries-steller-sea-lion-population-count \
+  -f KaggleNOAASeaLions.7z -p . --force \
+  >> download.log 2>&1 &
+echo $!   # save PID
+
+# other terminal:
+watch -n 60 'ps -p <PID> -o etime,rss; ls -lh KaggleNOAASeaLions.7z 2>&1'
+```
+
+**Do not use** `Kaggle-NOAA-SeaLions.torrent` / aria2 — dead in 2026; produces a useless ~96 GB `data` file.
+
+### Verify → extract → preprocess
+
+```bash
+file KaggleNOAASeaLions.7z          # must: 7-zip archive
+7z t KaggleNOAASeaLions.7z -p"$(cat data_password.txt)"
+
+mkdir -p datasets
+7z x KaggleNOAASeaLions.7z -odatasets -p"$(cat data_password.txt)"
 python setup.py --preprocess
 python setup.py
 ```
 
-Smoke test with tiny subset (~99 MB):
-
-```bash
-python setup.py --small-download
-```
-
-Or one flag at a time after clone:
-
-```bash
-python setup.py --install --download --preprocess
-```
-
-3. **Sanity tests:**
+### Train and submit
 
 ```bash
 bash scripts/run_tests.sh
+bash scripts/run_phase1.sh 0
 ```
 
-## Lab machine — Phase 1 (smoke + baseline + submit)
+---
 
-Full pipeline (recommended):
+## `setup.py` (optional wrapper)
 
 ```bash
-bash scripts/run_phase1.sh 0    # GPU id, default 0
+python setup.py --install
+python setup.py --download       # Kaggle CLI + progress bar + extract
+python setup.py --small-download # TrainSmall2.7z smoke (~99 MB)
+python setup.py --preprocess
+python setup.py --force-download
 ```
 
-Resume without repeating finished steps:
+---
+
+## Phase 1 (manual steps)
 
 ```bash
-SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 SKIP_SMOKE=1 \
-  bash scripts/run_phase1.sh 0
-```
-
-**Prediction contract:** model outputs per-tile counts; image-level prediction = **sum** of unique tile windows (`data/predict.py`, used by train val / `validate.py` / `inference.py`).
-
-Or step by step:
-
-```bash
-# Optional smoke (~30–90 min)
-python train.py --run_name smoke_v1 --epochs 5 --batch_size 16 --gpu 0 --use_tiles
-
-# Baseline for first Kaggle submit (several hours)
 python train.py --run_name baseline --epochs 30 --batch_size 16 --gpu 0 --use_tiles
 python validate.py checkpoints/baseline_best.pth --gpu 0 --shifts 5
 python inference.py checkpoints/baseline_best.pth --run_name baseline --gpu 0 --shifts 5
 bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
 ```
 
-Shortcut train + infer only:
+Resume pipeline:
 
 ```bash
-bash train.sh resnet50 30 16 1e-4 0 299
+SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 SKIP_SMOKE=1 \
+  bash scripts/run_phase1.sh 0
 ```
 
-## What gets committed vs stays local
+**Prediction contract:** per-tile counts; image prediction = **sum** of unique tile windows (`data/predict.py`).
+
+---
+
+## Git vs local
 
 | Path | Git |
 |------|-----|
 | Code, `scripts/`, `tests/` | Yes |
-| `datasets/` (~103 GB) | **No** — `setup.py --download` on lab |
-| `checkpoints/`, `log/`, `submission/` | **No** — produced on lab |
+| `.kaggle/kaggle.json` | **No** |
+| `datasets/` (~100+ GB after extract) | **No** |
+| `checkpoints/`, `log/`, `submission/` | **No** |
 
-## `setup.py` reference
-
-```bash
-python setup.py                  # install deps + check dataset
-python setup.py --install        # pip install -r requirements.txt
-python setup.py --download       # Kaggle download + extract → datasets/
-python setup.py --preprocess     # drop MismatchedTrainImages
-python setup.py --force-download # re-download if needed
-```
-
-Legacy wrapper: `bash scripts/download_data.sh` → `python setup.py --download`
+---
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `data/` | PyTorch datasets, tiling, transforms |
-| `model/` | timm backbone + 5-d count head |
-| `utils/` | RMSE, splits, checkpoint I/O |
-| `train.py` | Training |
-| `inference.py` | Test predictions → CSV |
-| `ensemble.py` | Average multiple submission CSVs |
-| `scripts/run_phase1.sh` | End-to-end Phase 1 on lab GPU |
+| `data/` | Datasets, tiling, transforms, shared inference |
+| `model/` | timm backbone + 5-d head |
+| `train.py` / `inference.py` | Train and Kaggle CSV |
+| `scripts/kaggle_env.sh` | `KAGGLE_CONFIG_DIR=FP/.kaggle` |
+| `scripts/run_phase1.sh` | End-to-end Phase 1 |
 
 ## Related work
 
