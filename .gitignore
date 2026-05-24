@@ -1,6 +1,7 @@
 # Secrets — never commit (example template is OK)
 .kaggle/*
 !.kaggle/kaggle.json.example
+kaggle.json
 
 # Large / generated artifacts
 datasets/
