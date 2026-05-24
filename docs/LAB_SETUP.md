@@ -49,7 +49,31 @@ You should see `KaggleNOAASeaLions.7z` (~96 GB) in the list.
 
 ## 2. Download dataset (~96 GB, many hours)
 
-### Recommended: `nohup` (survives SSH disconnect)
+### Recommended: streamed `curl` download (survives the Kaggle CLI RAM issue)
+
+The normal `kaggle competitions download` command may buffer the 96 GB file in RAM before writing it. This script uses Kaggle's authenticated API endpoint with `curl --continue-at -`, so bytes stream directly to `KaggleNOAASeaLions.7z` and can resume.
+
+```bash
+cd ~/Rayhan/selectedtopics/FP
+source scripts/kaggle_env.sh
+
+rm -f Kaggle-NOAA-SeaLions Kaggle-NOAA-SeaLions.aria2   # bad aria2 leftovers
+
+nohup bash scripts/kaggle_curl_download.sh KaggleNOAASeaLions.7z . \
+  >> download_curl.log 2>&1 &
+
+echo $!    # save PID
+```
+
+Monitor from another terminal:
+
+```bash
+watch -n 60 'ps -p <PID> -o etime,rss 2>/dev/null; ls -lh ~/Rayhan/selectedtopics/FP/KaggleNOAASeaLions.7z 2>&1; tail -3 ~/Rayhan/selectedtopics/FP/download_curl.log'
+```
+
+You should see `KaggleNOAASeaLions.7z` appear quickly and grow on disk. Target: `102894707185` bytes (~96 GB).
+
+### Fallback: Kaggle CLI with `nohup`
 
 ```bash
 cd ~/Rayhan/selectedtopics/FP
@@ -76,7 +100,7 @@ tail -20 ~/Rayhan/selectedtopics/FP/download.log
 
 **Normal early behavior:** process runs, **no file** for 10–30+ minutes, RAM grows — then `KaggleNOAASeaLions.7z` appears and size increases.
 
-**Target:** `102894707185` bytes (~96 GB).
+**Target:** `102894707185` bytes (~96 GB). If no file appears and RSS keeps growing, stop this method and use the streamed `curl` script above.
 
 ### Alternative: `python setup.py --download`
 

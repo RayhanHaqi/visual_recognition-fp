@@ -25,23 +25,21 @@ kaggle competitions files -c noaa-fisheries-steller-sea-lion-population-count   
 sudo apt install p7zip-full    # once
 ```
 
-### Download (~96 GB, use `nohup`)
+### Download (~96 GB, use streamed `curl` + `nohup`)
 
 ```bash
 cd FP
 source scripts/kaggle_env.sh
 
-nohup kaggle competitions download \
-  -c noaa-fisheries-steller-sea-lion-population-count \
-  -f KaggleNOAASeaLions.7z -p . --force \
-  >> download.log 2>&1 &
+nohup bash scripts/kaggle_curl_download.sh KaggleNOAASeaLions.7z . \
+  >> download_curl.log 2>&1 &
 echo $!   # save PID
 
 # other terminal:
-watch -n 60 'ps -p <PID> -o etime,rss; ls -lh KaggleNOAASeaLions.7z 2>&1'
+watch -n 60 'ps -p <PID> -o etime,rss; ls -lh KaggleNOAASeaLions.7z 2>&1; tail -3 download_curl.log'
 ```
 
-**Do not use** `Kaggle-NOAA-SeaLions.torrent` / aria2 — dead in 2026; produces a useless ~96 GB `data` file.
+The `curl` script uses Kaggle auth from `.kaggle/kaggle.json`, streams directly to disk, and resumes partial downloads. **Do not use** `Kaggle-NOAA-SeaLions.torrent` / aria2 — dead in 2026; produces a useless ~96 GB `data` file.
 
 ### Verify → extract → preprocess
 
