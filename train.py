@@ -174,13 +174,15 @@ def main():
             train_paths, counts_df, tile_size=args.tile_size, train=True
         )
 
-    train_loader = DataLoader(
-        train_ds,
+    loader_kwargs = dict(
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=args.workers,
         pin_memory=device.type == "cuda",
     )
+    if args.workers > 0 and device.type == "cuda":
+        loader_kwargs["multiprocessing_context"] = "spawn"
+    train_loader = DataLoader(train_ds, **loader_kwargs)
 
     model = build_counter(args.backbone, pretrained=args.pretrained).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
