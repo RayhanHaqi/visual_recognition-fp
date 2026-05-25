@@ -12,6 +12,7 @@ BS=${3:-16}
 LR=${4:-1e-4}
 GPU=${5:-0}
 TILE=${6:-299}
+WORKERS=${7:-0}
 
 RUN_NAME="fp_${BACKBONE}_e${EPOCHS}_bs${BS}_t${TILE}"
 
@@ -27,6 +28,7 @@ python train.py \
   --lr "$LR" \
   --tile_size "$TILE" \
   --gpu "$GPU" \
+  --workers "$WORKERS" \
   --use_tiles
 
 echo "Inference..."

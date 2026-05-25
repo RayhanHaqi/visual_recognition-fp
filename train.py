@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,17 @@ from utils.seed import set_seed
 LOG_FIELDS = ["epoch", "train_loss", "train_rmse", "val_rmse", "lr", "best_rmse"]
 
 
+def format_duration(seconds: float) -> str:
+    total = int(round(seconds))
+    if total < 60:
+        return f"{total}s"
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes}m{secs:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m{secs:02d}s"
+
+
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--run_name", type=str, default=None)
@@ -47,7 +59,12 @@ def parse_args():
     p.add_argument("--wd", type=float, default=1e-4)
     p.add_argument("--val_frac", type=float, default=0.15)
     p.add_argument("--gpu", type=int, default=0)
-    p.add_argument("--workers", type=int, default=4)
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=0,
+        help="DataLoader workers (use 0 on CUDA; >0 can hang after epoch 1)",
+    )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--amp", action="store_true", default=True)
     p.add_argument("--no_amp", dest="amp", action="store_false")
@@ -77,7 +94,7 @@ def evaluate_images(
 
     stride = stride or tile_size // 2
     preds, tgts = [], []
-    for path in val_paths:
+    for path in tqdm(val_paths, desc="val", leave=False):
         preds.append(
             predict_image_tiled(
                 model, path, tile_size, device,
@@ -169,9 +186,15 @@ def main():
     args_dict = vars(args)
 
     for epoch in range(1, args.epochs + 1):
+        epoch_t0 = time.perf_counter()
+
+        train_t0 = time.perf_counter()
         train_loss, train_rmse = train_one_epoch(
             model, train_loader, optimizer, scheduler, device, scaler, args.amp
         )
+        train_secs = time.perf_counter() - train_t0
+
+        val_t0 = time.perf_counter()
         val_rmse = evaluate_images(
             model,
             val_paths,
@@ -182,6 +205,9 @@ def main():
             stride=args.tile_size // 2,
             batch_size=args.batch_size,
         )
+        val_secs = time.perf_counter() - val_t0
+        epoch_secs = time.perf_counter() - epoch_t0
+
         lr = optimizer.param_groups[0]["lr"]
         if val_rmse < best_rmse:
             best_rmse = val_rmse
@@ -198,8 +224,10 @@ def main():
         }
         append_log_row(log_path, row, LOG_FIELDS)
         print(
-            f"Epoch {epoch}/{args.epochs} | train_rmse={train_rmse:.4f} "
-            f"| val_rmse={val_rmse:.4f} | best={best_rmse:.4f}"
+            f"Epoch {epoch}/{args.epochs} | "
+            f"train {format_duration(train_secs)} | val {format_duration(val_secs)} | "
+            f"total {format_duration(epoch_secs)} | "
+            f"train_rmse={train_rmse:.4f} | val_rmse={val_rmse:.4f} | best={best_rmse:.4f}"
         )
 
     last_path = save_dir / f"{args.run_name}_last.pth"
