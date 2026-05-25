@@ -2,8 +2,10 @@
 # Phase 1 on lab GPU. Control steps with env vars (all default 0 = run step).
 #
 #   SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 \
-#   SKIP_SMOKE=1 SKIP_TRAIN=1 SKIP_VALIDATE=1 SKIP_INFER=1 SKIP_SUBMIT=1 \
+#   SKIP_TRAIN=1 SKIP_VALIDATE=1 SKIP_INFER=1 SKIP_SUBMIT=1 \
 #   bash scripts/run_phase1.sh 0
+#
+# Smoke train (5 epochs) is off by default. Opt in: SKIP_SMOKE=0 bash scripts/run_phase1.sh 0
 #
 # FP_CONDA_ENV=selectedtopics_env  GPU id as first argument (default 0)
 set -euo pipefail
@@ -39,7 +41,7 @@ if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
   bash scripts/run_tests.sh
 fi
 
-if [[ "${SKIP_SMOKE:-0}" != "1" ]]; then
+if [[ "${SKIP_SMOKE:-1}" != "1" ]]; then
   echo "--- Smoke train (5 epochs) ---"
   python train.py --run_name smoke_v1 --epochs 5 --batch_size 16 --gpu "$GPU" --use_tiles
 fi
