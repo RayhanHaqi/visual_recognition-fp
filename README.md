@@ -91,7 +91,7 @@ bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
 Resume pipeline:
 
 ```bash
-SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 SKIP_SMOKE=1 \
+SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 \
   bash scripts/run_phase1.sh 0
 ```
 
