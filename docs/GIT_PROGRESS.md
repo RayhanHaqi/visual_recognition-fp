@@ -9,6 +9,7 @@ Keep large artifacts **local on the lab PC**. Only push small training outputs.
 | `submission/*.csv` | **Yes** — Kaggle predictions |
 | `datasets/` (~96 GB) | **No** — download with `setup.py` / `kaggle_curl_download.sh` |
 | `checkpoints/*.pth` | **No** — re-train or copy manually (scp, Drive) |
+| `*.7z` (e.g. `KaggleNOAASeaLions.7z`, `TrainSmall2.7z`) | **No** |
 | `.kaggle/kaggle.json` | **No** |
 
 ## Push logs + submission after a run

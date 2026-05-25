@@ -10,11 +10,12 @@ checkpoints/
 *.pth
 *.pt
 
-# Download cache
+# Download cache / archives (never commit)
 KaggleNOAASeaLions.7z
+TrainSmall2.7z
 noaa-fisheries-steller-sea-lion-population-count.zip
-*.zip
 *.7z
+*.zip
 
 # Training logs and submissions — commit CSVs only (see docs/GIT_PROGRESS.md)
 log/*
