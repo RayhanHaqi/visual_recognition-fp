@@ -85,13 +85,17 @@ def extract_dots_from_pair(
 
 
 def extract_dots_for_image(data_dir: Path, image_path: Path) -> list[Dot]:
-    train_rgb = cv2.cvtColor(cv2.imread(str(image_path)), cv2.COLOR_BGR2RGB)
+    train_bgr = cv2.imread(str(image_path))
+    if train_bgr is None:
+        return []
+    train_rgb = cv2.cvtColor(train_bgr, cv2.COLOR_BGR2RGB)
     dotted_path = data_dir / "TrainDotted" / image_path.name
     if not dotted_path.is_file():
         return []
-    dotted_rgb = cv2.cvtColor(cv2.imread(str(dotted_path)), cv2.COLOR_BGR2RGB)
-    if train_rgb is None or dotted_rgb is None:
+    dotted_bgr = cv2.imread(str(dotted_path))
+    if dotted_bgr is None:
         return []
+    dotted_rgb = cv2.cvtColor(dotted_bgr, cv2.COLOR_BGR2RGB)
     return extract_dots_from_pair(train_rgb, dotted_rgb)
 
 
@@ -113,13 +117,23 @@ def dots_to_rows(image_id: str, dots: list[Dot]) -> list[dict]:
 
 def build_dot_cache(data_dir: Path, out_path: Path) -> pd.DataFrame:
     rows: list[dict] = []
+    skipped = 0
     paths = list_train_images(data_dir)
     for path in tqdm(paths, desc="extract dots"):
-        dots = extract_dots_for_image(data_dir, path)
+        try:
+            dots = extract_dots_for_image(data_dir, path)
+        except Exception as exc:
+            skipped += 1
+            tqdm.write(f"skip {path.name}: {exc}")
+            continue
+        if not dots and not (data_dir / "TrainDotted" / path.name).is_file():
+            skipped += 1
         rows.extend(dots_to_rows(path.stem, dots))
     df = pd.DataFrame(rows)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path, index=False)
+    if skipped:
+        print(f"Skipped {skipped} images during dot extraction")
     return df
 
 
