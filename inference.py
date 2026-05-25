@@ -19,6 +19,7 @@ from data.targets import (
     SUBMISSION_COLUMNS,
     SUBMISSION_ID_COL,
     count_columns_from_checkpoint,
+    finalize_submission_df,
     list_test_images,
     normalize_test_id,
     pred_vector_to_submission_row,
@@ -93,7 +94,7 @@ def main():
         row.update(counts)
         rows.append(row)
 
-    out_df = pd.DataFrame(rows)[SUBMISSION_COLUMNS]
+    out_df = finalize_submission_df(pd.DataFrame(rows))
     out_dir = ROOT / "submission"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = Path(args.output) if args.output else out_dir / f"{args.run_name}.csv"

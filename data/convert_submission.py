@@ -11,6 +11,7 @@ from data.targets import (
     COUNT_COLUMNS,
     SUBMISSION_COLUMNS,
     SUBMISSION_ID_COL,
+    finalize_submission_df,
     normalize_test_id,
     submission_id_column,
 )
@@ -22,9 +23,7 @@ def convert_submission(df: pd.DataFrame) -> pd.DataFrame:
     id_col = submission_id_column(df)
 
     if SUBMISSION_ID_COL in df.columns and all(c in df.columns for c in COUNT_COLUMNS):
-        out = df[SUBMISSION_COLUMNS].copy()
-        out[SUBMISSION_ID_COL] = out[SUBMISSION_ID_COL].map(normalize_test_id)
-        return out
+        return finalize_submission_df(df)
 
     required_legacy = ["adult_males", "adult_females", "subadult_males", "subadult_females", "pups"]
     missing = [c for c in required_legacy if c not in df.columns]
@@ -37,14 +36,14 @@ def convert_submission(df: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(
         {
             SUBMISSION_ID_COL: df[id_col].map(normalize_test_id),
-            "adult_males": df["adult_males"].clip(lower=0),
-            "subadult_males": df["subadult_males"].clip(lower=0),
-            "adult_females": df["adult_females"].clip(lower=0),
-            "juveniles": df["subadult_females"].clip(lower=0),
-            "pups": df["pups"].clip(lower=0),
+            "adult_males": df["adult_males"],
+            "subadult_males": df["subadult_males"],
+            "adult_females": df["adult_females"],
+            "juveniles": df["subadult_females"],
+            "pups": df["pups"],
         }
     )
-    return out[SUBMISSION_COLUMNS]
+    return finalize_submission_df(out)
 
 
 def main() -> None:

@@ -85,6 +85,15 @@ def pred_vector_to_submission_row(
     return {col: max(0.0, float(values[col])) for col in COUNT_COLUMNS}
 
 
+def finalize_submission_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Kaggle requires non-negative integer counts."""
+    out = df[SUBMISSION_COLUMNS].copy()
+    out[SUBMISSION_ID_COL] = out[SUBMISSION_ID_COL].map(normalize_test_id)
+    for col in COUNT_COLUMNS:
+        out[col] = out[col].clip(lower=0).round().astype(int)
+    return out
+
+
 def _normalize_train_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     if TRAIN_ID_COL in df.columns:

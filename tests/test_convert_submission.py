@@ -25,6 +25,7 @@ def test_convert_legacy_submission():
     out = convert_submission(legacy)
     assert list(out.columns) == SUBMISSION_COLUMNS
     assert out[SUBMISSION_ID_COL].tolist() == [0, 1]
-    assert out.loc[0, "juveniles"] == 7.0
-    assert out.loc[0, "adult_females"] == 3.0
-    assert out.loc[0, "subadult_males"] == 5.0
+    assert out.loc[0, "juveniles"] == 7
+    assert out.loc[0, "adult_females"] == 3
+    assert out.loc[0, "subadult_males"] == 5
+    assert out.dtypes["adult_males"] in (int, "int64")
