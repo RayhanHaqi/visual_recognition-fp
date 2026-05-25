@@ -28,6 +28,9 @@ submission/*
 
 report/*
 !report/.gitkeep
+!report/report.tex
+!report/README.md
+!report/figure/**
 notebooks/*
 !notebooks/.gitkeep
 

@@ -1,0 +1,283 @@
+\documentclass[12pt, a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm}
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cite}
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{CJKutf8}
+\onehalfspacing
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=blue,
+    citecolor=blue,
+}
+
+% --- Document Identity ---
+\title{\textbf{Visual Recognition using Deep Learning}\\ \large Final Project (Preliminary Report):\\ NOAA Steller Sea Lion Population Count}
+\author{
+    Muhammad Rayhan Athaillah \begin{CJK*}{UTF8}{bsmi}(賴瑞涵)\end{CJK*}\\
+    \small Student ID: 313540001\\
+    \small National Yang Ming Chiao Tung University
+}
+\date{May 25, 2026}
+
+\begin{document}
+
+\maketitle
+
+\vspace{0.5cm}
+\noindent \textbf{GitHub Repository:} \href{https://github.com/RayhanHaqi/visual\_recognition-fp}{https://github.com/RayhanHaqi/visual\_recognition-fp}
+
+\vspace{0.3cm}
+\noindent \textbf{Kaggle Competition:} \href{https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count}{NOAA Fisheries Steller Sea Lion Population Count}
+
+\vspace{0.3cm}
+\noindent \textit{This document is a \textbf{preliminary report} prepared before the final submission deadline (2026/05/31 23:59). Kaggle leaderboard results and figures will be updated in the final version.}
+
+% ==========================================
+% 1. INTRODUCTION
+% ==========================================
+\section{Introduction}
+
+This report describes our ongoing work on the \textbf{NOAA Fisheries Steller Sea Lion Population Count} Kaggle competition (Final Project, Topic~3) for the Visual Recognition using Deep Learning course (2026 Spring). The task is to predict five non-negative integer counts per aerial photograph:
+
+\begin{itemize}
+    \item \texttt{adult\_males}, \texttt{adult\_females}, \texttt{subadult\_males}, \texttt{subadult\_females}, \texttt{pups}
+\end{itemize}
+
+Performance is evaluated by \textbf{Root Mean Squared Error (RMSE)} on a hidden test set; \textbf{lower is better}. The competition historically involved 386 teams, with golden-medal RMSE roughly in the range 15.88--10.86 (best public leaderboard scores).
+
+\subsection{Task and Dataset}
+The dataset contains high-resolution aerial images of Steller sea lion colonies:
+\begin{itemize}
+    \item \textbf{Training:} 949 original images with dot annotations in \texttt{TrainDotted/}; 114 mismatched pairs are removed using \texttt{MismatchedTrainImages.txt}, leaving \textbf{891} usable training images.
+    \item \textbf{Test:} 18,636 unlabeled images in \texttt{Test/}.
+    \item \textbf{Size:} approximately 103~GB compressed; extracted images occupy $\sim$96~GB on disk.
+    \item \textbf{Resolution:} variable across images (multi-megapixel aerial frames); images are much larger than typical ImageNet inputs.
+\end{itemize}
+
+Each training image is paired with five class counts in \texttt{train.csv}. Unlike bounding-box detection, the model must regress population counts directly from pixels.
+
+\subsection{Technical Constraints}
+Following course and competition rules:
+\begin{itemize}
+    \item \textbf{No external data} beyond the official Kaggle release.
+    \item \textbf{ImageNet pretraining} is permitted for the backbone.
+    \item Submission includes \textbf{source code (.py) and an English PDF report}; checkpoints and datasets are \textbf{not} submitted.
+    \item Presentation (2026/06/02) must include a Kaggle rank screenshot, team contribution table, and code link.
+\end{itemize}
+
+% ==========================================
+% 2. RELATED WORK
+% ==========================================
+\section{Related Work}
+
+\subsection{Tile-Based Counting Regression}
+Top Kaggle solutions treat sea lion counting as \textbf{density / tile regression} rather than end-to-end image classification. The first-place approach (outrunner) and subsequent strong baselines train CNNs on fixed-size image tiles and aggregate tile predictions to obtain image-level counts \cite{outrunner2017}.
+
+\subsection{UNet + Secondary Regressor (2nd Place)}
+Lopuhin \cite{lopuhin2017} proposed a two-stage pipeline: a UNet predicts segmentation-style density maps on scaled training images, then a secondary regressor maps aggregated UNet outputs to the five count targets. This approach achieved second place and remains a strong reference for handling large images via downscaling and dense prediction.
+
+\subsection{Inception-ResNet v2 Tiles + Ensemble (4th Place)}
+Asanakoy \cite{asanakoy2017} fine-tuned Inception-ResNet v2 on $299\times299$ tiles with RMSE loss, using heavy augmentation and multi-shift test-time tiling. Test images were downscaled to $\sim$0.4--0.5$\times$ before inference. An ensemble of models trained with different scale augmentations improved robustness.
+
+\subsection{Design Implications for Our Pipeline}
+These works share several principles adopted in our implementation:
+\begin{enumerate}
+    \item \textbf{Never resize the full image to a tiny square} --- use tiling or downscaling instead.
+    \item \textbf{Train on tiles}, predict on overlapping or shifted tile grids at test time.
+    \item \textbf{Downscale test images} for faster inference and better generalization (planned Phase~2).
+    \item \textbf{Multi-shift TTA} at inference improves RMSE by averaging predictions from staggered tile grids.
+\end{enumerate}
+
+% ==========================================
+% 3. METHODOLOGY
+% ==========================================
+\section{Method}
+
+\subsection{Overview}
+Our Phase~1 baseline uses a \textbf{ResNet-50} backbone (timm, ImageNet pretrained) with a linear 5-dimensional output head. The model predicts non-negative counts per input tile; image-level prediction is obtained by tiled inference and aggregation.
+
+\subsection{Data Preprocessing}
+\begin{enumerate}
+    \item Download \texttt{KaggleNOAASeaLions.7z} ($\sim$96~GB) via authenticated streaming (\texttt{curl}), not the Kaggle Python client (which buffers the full file in RAM).
+    \item Extract password-protected archive into \texttt{datasets/}.
+    \item Fetch corrected \texttt{train.csv} labels (official API file unavailable in 2026); rename \texttt{juveniles} $\rightarrow$ \texttt{subadult\_females}.
+    \item Remove mismatched training images listed in \texttt{MismatchedTrainImages.txt}.
+\end{enumerate}
+
+\subsection{Training: Random Tile Regression}
+We use \texttt{SeaLionTileDataset} with \texttt{--use\_tiles}:
+\begin{itemize}
+    \item Load full-resolution train image.
+    \item Sample a random $299\times299$ crop (native pixels, not whole-image resize).
+    \item Target = full image counts $\times$ (crop area / image area).
+    \item Augmentations: random horizontal/vertical flip, 90$^\circ$ rotations, \texttt{ColorJitter}.
+    \item Eight random tiles per image per epoch ($757 \times 8 \approx 6056$ steps with 85/15 train/val split).
+\end{itemize}
+
+This teaches the network to predict \emph{how many sea lions appear in a local patch}, consistent with top competition solutions.
+
+\subsection{Validation and Inference: Tiled Aggregation}
+For full-image evaluation, we slide a $299\times299$ window across each image. Each tile is forwarded through the network; tile outputs are combined into one 5-D count vector.
+
+\textbf{Initial implementation issue:} summing predictions from \textbf{overlapping} tiles (stride 149, multiple shifts) while training on non-overlapping random crops caused validation RMSE to \textbf{increase} as training improved (tile predictions grew, overlap over-counted). Table~\ref{tab:broken_val} shows this failure mode on run \texttt{fp\_resnet50\_e30\_bs128\_t299}.
+
+\begin{table}[htbp]
+\centering
+\caption{Broken validation metric (overlapping tile sum) --- run v1, before fix.}
+\label{tab:broken_val}
+\begin{tabular}{@{}cccc@{}}
+\toprule
+\textbf{Epoch} & \textbf{Train RMSE} & \textbf{Val RMSE} & \textbf{Best Val} \\ \midrule
+1 & 0.2140 & 90.67 & 90.67 \\
+2 & 0.2010 & 212.84 & 90.67 \\
+3 & 0.1937 & 214.35 & 90.67 \\
+4 & 0.1910 & 222.12 & 90.67 \\
+5 & 0.1890 & 231.38 & 90.67 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Fix (current codebase):}
+\begin{itemize}
+    \item \textbf{Training validation:} \texttt{val\_shifts=1}, \texttt{val\_stride=tile\_size} (non-overlapping grid) for a meaningful RMSE monitor.
+    \item \textbf{Inference TTA:} sum tiles \emph{within each shift}, then \textbf{average} shift-level image counts (not one global sum over all shifts).
+    \item \textbf{Final inference:} \texttt{--shifts 5 --stride 299}.
+\end{itemize}
+
+\subsection{Loss and Optimization}
+\begin{itemize}
+    \item \textbf{Loss:} RMSE between predicted and target 5-D count vectors.
+    \item \textbf{Optimizer:} AdamW ($lr = 10^{-4}$, weight decay $10^{-4}$).
+    \item \textbf{Schedule:} OneCycleLR over all training steps ($pct\_start = 0.1$).
+    \item \textbf{Mixed precision:} AMP enabled on GPU.
+    \item \textbf{DataLoader:} \texttt{workers=0} on CUDA to avoid fork-related deadlocks after epoch~1.
+\end{itemize}
+
+\subsection{Hardware and Reproducibility}
+Training runs on lab machine \textbf{w61} (RTX~5090, 32~GB VRAM). Code, logs (\texttt{log/*.csv}), and submissions (\texttt{submission/*.csv}) are version-controlled; datasets, checkpoints, and \texttt{.7z} archives remain local.
+
+% ==========================================
+% 4. EXPERIMENTAL RESULTS
+% ==========================================
+\section{Experimental Results}
+
+\subsection{Baseline Configuration}
+Table~\ref{tab:config} summarizes the primary baseline under development.
+
+\begin{table}[htbp]
+\centering
+\caption{Phase~1 baseline configuration (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}).}
+\label{tab:config}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Setting} & \textbf{Value} \\ \midrule
+Backbone & ResNet-50 (timm, ImageNet pretrained) \\
+Input tile & $299 \times 299$ \\
+Training & Random tile crops, 8 tiles/image \\
+Batch size & 128 \\
+Epochs & 30 \\
+Optimizer & AdamW, $lr=10^{-4}$, $wd=10^{-4}$ \\
+Val split & 15\% (134 images) \\
+Val tiling & 1 shift, stride 299 \\
+Inference TTA & 5 shifts, stride 299 \\
+Metric & RMSE (5 classes) \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Preliminary Training Observations}
+\begin{itemize}
+    \item \textbf{Training speed:} $\sim$2 minutes per epoch (tile batches); validation dominated wall time before the overlap fix ($\sim$15--30 min/epoch with overlapping grids).
+    \item \textbf{GPU utilization:} low average GPU util ($\sim$0--40\%) due to CPU-bound loading of large JPEGs; expected for single-process data loading (\texttt{workers=0}).
+    \item \textbf{Restart:} after fixing validation, run \texttt{fp\_resnet50\_e30\_bs128\_t299\_v2} replaces the misleading v1 checkpoint selection.
+\end{itemize}
+
+\subsection{Kaggle Leaderboard (Placeholder)}
+\textit{[To be updated before final report deadline.]}
+
+\begin{figure}[htbp]
+    \centering
+    \fbox{\parbox{0.85\textwidth}{\centering\vspace{2.5cm}
+    Placeholder: Kaggle public leaderboard screenshot\\ (rank, RMSE, submission date)\vspace{2.5cm}}}
+    \caption{Kaggle performance snapshot (required in final report and presentation).}
+    \label{fig:kaggle}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{Results summary (preliminary --- Kaggle scores pending).}
+\label{tab:results}
+\begin{tabular}{@{}llccc@{}}
+\toprule
+\textbf{Run} & \textbf{Notes} & \textbf{Local Val RMSE} & \textbf{Kaggle RMSE} & \textbf{Status} \\ \midrule
+v1 & Overlap val bug & 90.67 (ep.~1) & --- & Stopped \\
+v2 & Fixed val + TTA & TBD & TBD & Training \\
+--- & Test downscale 0.5$\times$ & --- & --- & Planned \\
+--- & Ensemble / larger backbone & --- & --- & Planned \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Planned Phase~2 Experiments}
+\begin{enumerate}
+    \item Downscale \texttt{Test/} to 0.5$\times$ (\texttt{scripts/preprocess.py --downscale\_test 0.5}).
+    \item Try ConvNeXt / ResNet-RS backbones.
+    \item Pup count calibration (\texttt{--pup\_scale}) after baseline LB score.
+    \item Model ensemble (\texttt{ensemble.py}).
+\end{enumerate}
+
+% ==========================================
+% 5. TEAM CONTRIBUTION
+% ==========================================
+\section{Team Member Contribution}
+
+\textit{[Update percentages before presentation. Example layout from course slides.]}
+
+\begin{table}[htbp]
+\centering
+\caption{Team contribution table (placeholder --- adjust for actual team).}
+\label{tab:team}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+\textbf{Task} & \textbf{Member 1} & \textbf{Member 2} & \textbf{Member 3} & \textbf{Member 4} \\ \midrule
+Literature survey & 100 & 0 & 0 & 0 \\
+Approach design & 50 & 50 & 0 & 0 \\
+Implementation / experiments & 70 & 30 & 0 & 0 \\
+Report writing & 100 & 0 & 0 & 0 \\
+Slides / presentation & 100 & 0 & 0 & 0 \\ \bottomrule
+\end{tabular}
+\end{table}
+
+% ==========================================
+% 6. CONCLUSION
+% ==========================================
+\section{Conclusion}
+
+We presented a preliminary report for the NOAA Steller Sea Lion Population Count final project. Our Phase~1 pipeline uses ResNet-50 tile regression with ImageNet pretraining, following established Kaggle solutions. Key engineering contributions so far include robust large-file download, corrected label handling, and a fix for misleading validation RMSE caused by overlapping tile summation.
+
+The restarted baseline (\texttt{v2}) is designed to produce reliable validation metrics and Kaggle submissions. Final report updates will include Kaggle leaderboard screenshots, complete result tables, training curves, and ablation studies (test downscaling, TTA, ensemble).
+
+% ==========================================
+% REFERENCES
+% ==========================================
+\newpage
+\begin{thebibliography}{99}
+\bibitem{outrunner2017} outrunner: 1st place solution, NOAA Fisheries Steller Sea Lion Population Count (2017). Kaggle discussion and kernels.
+\bibitem{lopuhin2017} Lopuhin: 2nd place solution. \href{https://github.com/lopuhin/kaggle-lions-2017}{github.com/lopuhin/kaggle-lions-2017}
+\bibitem{asanakoy2017} Asanakoy: 4th place solution. \href{https://github.com/asanakoy/kaggle_sea_lions_counting}{github.com/asanakoy/kaggle\_sea\_lions\_counting}
+\bibitem{he2016} He, K., Zhang, X., Ren, S., Sun, J.: Deep residual learning for image recognition. In: Proc. CVPR (2016)
+\bibitem{loshchilov2017} Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. In: Proc. ICLR (2019)
+\bibitem{smith2019} Smith, L.N., Topin, N.: Super-convergence: Very fast training of neural networks using large learning rates. In: SPIE (2019)
+\end{thebibliography}
+
+\end{document}
