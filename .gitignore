@@ -3,28 +3,28 @@
 !.kaggle/kaggle.json.example
 kaggle.json
 
-# Dataset image folders (~96 GB) — ignored by default; use LFS only if you
-# intentionally push them (see docs/GIT_LFS.md). Re-download on lab via setup.py.
-datasets/Train/
-datasets/TrainDotted/
-datasets/Test/
+# Data and model weights — local only; re-download / re-train on each machine
+datasets/
 datasets_tmp/
+checkpoints/
+*.pth
+*.pt
 
-# Download cache at repo root
+# Download cache
 KaggleNOAASeaLions.7z
 noaa-fisheries-steller-sea-lion-population-count.zip
 *.zip
+*.7z
 
-# Runtime outputs (allow checkpoints/logs/submissions; weights go via LFS)
-checkpoints/*
-!checkpoints/.gitkeep
-!checkpoints/**
+# Training logs and submissions — commit CSVs only (see docs/GIT_PROGRESS.md)
 log/*
 !log/.gitkeep
-!log/**
+!log/*.csv
+
 submission/*
 !submission/.gitkeep
-!submission/**
+!submission/*.csv
+
 report/*
 !report/.gitkeep
 notebooks/*

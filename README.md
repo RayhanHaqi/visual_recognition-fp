@@ -104,9 +104,10 @@ SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 \
 | Path | Git |
 |------|-----|
 | Code, `scripts/`, `tests/` | Yes |
+| `log/*.csv`, `submission/*.csv` | **Yes** (see [docs/GIT_PROGRESS.md](docs/GIT_PROGRESS.md)) |
 | `.kaggle/kaggle.json` | **No** |
 | `datasets/` (~100+ GB after extract) | **No** |
-| `checkpoints/`, `log/`, `submission/` | **No** |
+| `checkpoints/*.pth` | **No** |
 
 ---
 
