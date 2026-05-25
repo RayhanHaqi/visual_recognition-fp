@@ -43,7 +43,7 @@
 \noindent \textbf{Kaggle Competition:} \href{https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count}{NOAA Fisheries Steller Sea Lion Population Count}
 
 \vspace{0.3cm}
-\noindent \textit{This document is a \textbf{preliminary report} prepared before the final submission deadline (2026/05/31 23:59). Kaggle leaderboard results and figures will be updated in the final version.}
+\noindent \textit{This document is a \textbf{preliminary report} prepared before the final submission deadline (2026/05/31 23:59). v2 Kaggle scores and v3 training status are included; figures and v3 leaderboard results will be updated in the final version.}
 
 % ==========================================
 % 1. INTRODUCTION
@@ -53,7 +53,7 @@
 This report describes our ongoing work on the \textbf{NOAA Fisheries Steller Sea Lion Population Count} Kaggle competition (Final Project, Topic~3) for the Visual Recognition using Deep Learning course (2026 Spring). The task is to predict five non-negative integer counts per aerial photograph:
 
 \begin{itemize}
-    \item \texttt{adult\_males}, \texttt{adult\_females}, \texttt{subadult\_males}, \texttt{subadult\_females}, \texttt{pups}
+    \item \texttt{adult\_males}, \texttt{subadult\_males}, \texttt{adult\_females}, \texttt{juveniles}, \texttt{pups}
 \end{itemize}
 
 Performance is evaluated by \textbf{Root Mean Squared Error (RMSE)} on a hidden test set; \textbf{lower is better}. The competition historically involved 386 teams, with golden-medal RMSE roughly in the range 15.88--10.86 (best public leaderboard scores).
@@ -113,7 +113,7 @@ Our Phase~1 baseline uses a \textbf{ResNet-50} backbone (timm, ImageNet pretrain
 \begin{enumerate}
     \item Download \texttt{KaggleNOAASeaLions.7z} ($\sim$96~GB) via authenticated streaming (\texttt{curl}), not the Kaggle Python client (which buffers the full file in RAM).
     \item Extract password-protected archive into \texttt{datasets/}.
-    \item Fetch corrected \texttt{train.csv} labels (official API file unavailable in 2026); rename \texttt{juveniles} $\rightarrow$ \texttt{subadult\_females}.
+    \item Fetch corrected \texttt{train.csv} labels (official API file unavailable in 2026); map legacy \texttt{subadult\_females} $\rightarrow$ \texttt{juveniles} where needed.
     \item Remove mismatched training images listed in \texttt{MismatchedTrainImages.txt}.
 \end{enumerate}
 
@@ -128,6 +128,11 @@ We use \texttt{SeaLionTileDataset} with \texttt{--use\_tiles}:
 \end{itemize}
 
 This teaches the network to predict \emph{how many sea lions appear in a local patch}, consistent with top competition solutions.
+
+\subsection{Training v3: Dot-Count Labels (\texttt{label\_mode=dots})}
+Area-fraction targets (v1/v2) scale image-level counts by crop size but do not use the pixel-level dot annotations in \texttt{TrainDotted/}. For v3 we extract colored dots by differencing each \texttt{TrainDotted} image against its \texttt{Train} pair, classify dot color into the five count classes, and cache positions in \texttt{datasets/dot\_labels.csv} ($\sim$18 minutes, 891 images, $\sim$2.26M dots).
+
+During training, each random $299\times299$ crop receives a 5-D target equal to the number of cached dots whose $(x,y)$ fall inside the crop. Validation and inference still aggregate tile predictions to image-level counts with the same non-overlapping validation grid and multi-shift TTA as v2. This aligns supervision more closely with the competition's dot-annotation protocol.
 
 \subsection{Validation and Inference: Tiled Aggregation}
 For full-image evaluation, we slide a $299\times299$ window across each image. Each tile is forwarded through the network; tile outputs are combined into one 5-D count vector.
@@ -166,7 +171,7 @@ For full-image evaluation, we slide a $299\times299$ window across each image. E
 \end{itemize}
 
 \subsection{Hardware and Reproducibility}
-Training runs on lab machine \textbf{w61} (RTX~5090, 32~GB VRAM). Code, logs (\texttt{log/*.csv}), and submissions (\texttt{submission/*.csv}) are version-controlled; datasets, checkpoints, and \texttt{.7z} archives remain local.
+Training runs on lab machine \textbf{w61} (NVIDIA GPU, 32~GB VRAM; runs use \texttt{cuda:1}). Code, logs (\texttt{log/*.csv}), and submissions (\texttt{submission/*.csv}) are version-controlled where applicable; datasets, checkpoints, and \texttt{.7z} archives remain local. Kaggle credentials are stored in a gitignored workspace directory (\texttt{FP/.kaggle/}) rather than the shared home folder.
 
 % ==========================================
 % 4. EXPERIMENTAL RESULTS
@@ -198,38 +203,85 @@ Metric & RMSE (5 classes) \\ \bottomrule
 
 \subsection{Preliminary Training Observations}
 \begin{itemize}
-    \item \textbf{Training speed:} $\sim$2 minutes per epoch (tile batches); validation dominated wall time before the overlap fix ($\sim$15--30 min/epoch with overlapping grids).
-    \item \textbf{GPU utilization:} low average GPU util ($\sim$0--40\%) due to CPU-bound loading of large JPEGs; expected for single-process data loading (\texttt{workers=0}).
-    \item \textbf{Restart:} after fixing validation, run \texttt{fp\_resnet50\_e30\_bs128\_t299\_v2} replaces the misleading v1 checkpoint selection.
+    \item \textbf{v1 failure mode:} overlapping validation tiles inflated RMSE as training improved (Table~\ref{tab:broken_val}); training was stopped after epoch~5.
+    \item \textbf{v2 (area labels):} after the validation fix, val RMSE decreased monotonically early on and plateaued around epoch~20. Best val RMSE \textbf{36.74} (epoch~20); final epoch val RMSE 37.47. Train RMSE per tile dropped from 0.21 to $\sim$0.18.
+    \item \textbf{Training speed (v2/v3):} $\sim$13--17~s per batch (batch 128, 48 steps/epoch) $\Rightarrow$ $\sim$15--18~min per epoch including validation on 134 images; 30 epochs $\approx$ 7.5--9~h.
+    \item \textbf{GPU utilization:} low average util ($\sim$0--40\%) due to CPU-bound loading of large JPEGs with \texttt{workers=0} (avoids CUDA fork deadlocks).
+    \item \textbf{Val vs.\ Kaggle gap:} v2 local val RMSE (36.74) is higher than Kaggle private RMSE (28.09), likely due to train/val split noise, full-resolution test TTA, and the 18{,}636-image test set differing from our 134-image holdout.
+    \item \textbf{v3 (dots):} dot-cache extraction completed in $\sim$18~min; 30-epoch training was launched with \texttt{fp\_resnet50\_e30\_bs128\_t299\_dots\_v3} (results pending at report time).
 \end{itemize}
 
-\subsection{Kaggle Leaderboard (Placeholder)}
-\textit{[To be updated before final report deadline.]}
+\subsection{v2 Training Curve (Fixed Validation)}
+Table~\ref{tab:v2_curve} lists selected epochs from \texttt{log/fp\_resnet50\_e30\_bs128\_t299\_v2.csv}.
+
+\begin{table}[htbp]
+\centering
+\caption{v2 training log (area-fraction labels, fixed non-overlapping val).}
+\label{tab:v2_curve}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+\textbf{Epoch} & \textbf{Train RMSE} & \textbf{Val RMSE} & \textbf{Best Val} & \textbf{Notes} \\ \midrule
+1 & 0.2142 & 43.91 & 43.91 & \\
+5 & 0.1886 & 38.94 & 38.94 & \\
+10 & 0.1832 & 37.90 & 37.30 & \\
+15 & 0.1800 & 38.31 & 36.88 & \\
+20 & 0.1774 & \textbf{36.74} & \textbf{36.74} & Best checkpoint \\
+25 & 0.1796 & 37.43 & 36.74 & \\
+30 & 0.1785 & 37.47 & 36.74 & Final epoch \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Kaggle Leaderboard (v2)}
+We submitted \texttt{fp\_resnet50\_e30\_bs128\_t299\_v2} using epoch-20 best weights, 5-shift TTA, and the official 18{,}636-row submission schema (integer counts, column order \texttt{test\_id, adult\_males, subadult\_males, adult\_females, juveniles, pups}). Scores below are from a late submission after the original competition deadline.
 
 \begin{figure}[htbp]
     \centering
     \fbox{\parbox{0.85\textwidth}{\centering\vspace{2.5cm}
-    Placeholder: Kaggle public leaderboard screenshot\\ (rank, RMSE, submission date)\vspace{2.5cm}}}
-    \caption{Kaggle performance snapshot (required in final report and presentation).}
+    Placeholder: Kaggle leaderboard screenshot\\ (public RMSE 29.10, private RMSE 28.09)\vspace{2.5cm}}}
+    \caption{Kaggle performance snapshot for v2 (screenshot to be inserted before final deadline).}
     \label{fig:kaggle}
 \end{figure}
 
 \begin{table}[htbp]
 \centering
-\caption{Results summary (preliminary --- Kaggle scores pending).}
-\label{tab:results}
-\begin{tabular}{@{}llccc@{}}
+\caption{Kaggle RMSE for v2 (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}, late submit).}
+\label{tab:kaggle_v2}
+\begin{tabular}{@{}lcc@{}}
 \toprule
-\textbf{Run} & \textbf{Notes} & \textbf{Local Val RMSE} & \textbf{Kaggle RMSE} & \textbf{Status} \\ \midrule
-v1 & Overlap val bug & 90.67 (ep.~1) & --- & Stopped \\
-v2 & Fixed val + TTA & TBD & TBD & Training \\
+\textbf{Split} & \textbf{RMSE} & \textbf{Notes} \\ \midrule
+Public LB & 29.104 & Best epoch-20 checkpoint \\
+Private LB & 28.085 & Same submission \\
+Historical golden medal (2017) & $\sim$10.9--15.9 & Reference only \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Results summary (preliminary).}
+\label{tab:results}
+\begin{tabular}{@{}p{2.8cm}p{3.2cm}ccc@{}}
+\toprule
+\textbf{Run} & \textbf{Label mode} & \textbf{Local Val RMSE} & \textbf{Kaggle RMSE} & \textbf{Status} \\ \midrule
+v1 & Area fraction & 90.67 (ep.~1) & --- & Stopped (val bug) \\
+v2 & Area fraction & \textbf{36.74} (ep.~20) & 28.09 (priv.) & Complete \\
+v3 & TrainDotted dots & TBD & TBD & Training \\
 --- & Test downscale 0.5$\times$ & --- & --- & Planned \\
 --- & Ensemble / larger backbone & --- & --- & Planned \\ \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{Engineering Notes}
+Beyond modeling, several pipeline issues were resolved during Phase~1:
+\begin{itemize}
+    \item \textbf{Dataset download:} streaming \texttt{curl} for the 96~GB 7z archive (Kaggle Python client OOM on large files).
+    \item \textbf{Submission format:} 18{,}636 test rows from official \texttt{sample\_submission.csv}; integer-rounded counts; correct Kaggle column names.
+    \item \textbf{Validation metric:} non-overlapping tile grid for training-time val; shift-averaged TTA at inference.
+    \item \textbf{Dot cache (v3):} one-time extraction from 891 Train/TrainDotted pairs; reused across runs unless explicitly rebuilt.
+\end{itemize}
+
 \subsection{Planned Phase~2 Experiments}
 \begin{enumerate}
+    \item Complete v3 dot-label training and Kaggle evaluation.
     \item Downscale \texttt{Test/} to 0.5$\times$ (\texttt{scripts/preprocess.py --downscale\_test 0.5}).
     \item Try ConvNeXt / ResNet-RS backbones.
     \item Pup count calibration (\texttt{--pup\_scale}) after baseline LB score.
@@ -263,9 +315,9 @@ Slides / presentation & 100 & 0 & 0 & 0 \\ \bottomrule
 % ==========================================
 \section{Conclusion}
 
-We presented a preliminary report for the NOAA Steller Sea Lion Population Count final project. Our Phase~1 pipeline uses ResNet-50 tile regression with ImageNet pretraining, following established Kaggle solutions. Key engineering contributions so far include robust large-file download, corrected label handling, and a fix for misleading validation RMSE caused by overlapping tile summation.
+We presented a preliminary report for the NOAA Steller Sea Lion Population Count final project. Our Phase~1 pipeline uses ResNet-50 tile regression with ImageNet pretraining, following established Kaggle solutions. Key engineering contributions include robust large-file download, corrected label and submission handling, and a fix for misleading validation RMSE caused by overlapping tile summation.
 
-The restarted baseline (\texttt{v2}) is designed to produce reliable validation metrics and Kaggle submissions. Final report updates will include Kaggle leaderboard screenshots, complete result tables, training curves, and ablation studies (test downscaling, TTA, ensemble).
+The v2 baseline (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}) completed 30 epochs with best validation RMSE \textbf{36.74} and Kaggle private RMSE \textbf{28.09}. v3 training with dot-count labels from \texttt{TrainDotted} was in progress at report time. The final report will add the Kaggle screenshot, v3 results, training-curve figures, and ablations (test downscaling, TTA, ensemble).
 
 % ==========================================
 % REFERENCES
