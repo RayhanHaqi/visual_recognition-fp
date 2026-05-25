@@ -35,6 +35,7 @@ echo "Inference..."
 python inference.py "checkpoints/${RUN_NAME}_best.pth" \
   --run_name "$RUN_NAME" \
   --gpu "$GPU" \
-  --shifts 5
+  --shifts 5 \
+  --stride "$TILE"
 
 echo "Done. Submission: submission/${RUN_NAME}.csv"
