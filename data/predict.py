@@ -80,7 +80,7 @@ def predict_image_tiled(
     """
     img = np.array(Image.open(image_path).convert("RGB"))
     h, w = img.shape[:2]
-    stride = stride or tile_size // 2
+    stride = stride if stride is not None else tile_size
     shift_count = max(1, shifts)
     windows = list(iter_tile_windows(w, h, tile_size, stride=stride, shifts=shift_count))
 

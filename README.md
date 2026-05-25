@@ -89,10 +89,11 @@ python setup.py --force-download
 ## Phase 1 (manual steps)
 
 ```bash
-python train.py --run_name baseline --epochs 30 --batch_size 16 --gpu 0 --use_tiles
-python validate.py checkpoints/baseline_best.pth --gpu 0 --shifts 5
-python inference.py checkpoints/baseline_best.pth --run_name baseline --gpu 0 --shifts 5
-bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
+python train.py --run_name fp_resnet50_e30_bs128_t299_v2 --epochs 30 --batch_size 128 --gpu 1 --tile_size 299 --val_shifts 1 --use_tiles
+python -m data.fix_sample_submission --data_path datasets --limit 100
+python validate.py checkpoints/fp_resnet50_e30_bs128_t299_v2_best.pth --gpu 1 --shifts 5 --stride 299
+python inference.py checkpoints/fp_resnet50_e30_bs128_t299_v2_best.pth --run_name fp_resnet50_e30_bs128_t299_v2 --gpu 1 --shifts 5 --stride 299
+bash scripts/submit.sh submission/fp_resnet50_e30_bs128_t299_v2.csv "FP resnet50 v2"
 ```
 
 Resume pipeline:

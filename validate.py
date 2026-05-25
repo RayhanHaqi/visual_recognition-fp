@@ -40,7 +40,7 @@ def main():
     ckpt_args = ckpt.get("args", {})
     backbone = ckpt_args.get("backbone", "resnet50")
     tile_size = args.tile_size or ckpt_args.get("tile_size", 299)
-    stride = args.stride or tile_size // 2
+    stride = args.stride if args.stride is not None else tile_size
 
     model = build_counter(backbone, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)

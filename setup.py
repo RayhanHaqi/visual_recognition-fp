@@ -522,7 +522,7 @@ def print_status(data_dir: Path = DATA_DIR) -> int:
         print("\nNext on lab machine:")
         print("  python setup.py --preprocess")
         print("  pytest tests/ -v")
-        print("  bash scripts/run_phase1.sh")
+        print("  bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2")
         return 0
 
     print("  Status: INCOMPLETE")

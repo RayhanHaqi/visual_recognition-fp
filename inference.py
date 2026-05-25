@@ -42,7 +42,7 @@ def main():
     ckpt_args = ckpt.get("args", {})
     backbone = ckpt_args.get("backbone", "resnet50")
     tile_size = args.tile_size or ckpt_args.get("tile_size", 299)
-    stride = args.stride or tile_size // 2
+    stride = args.stride if args.stride is not None else tile_size
 
     model = build_counter(backbone, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)
@@ -51,11 +51,20 @@ def main():
     sample_path = data_dir / "sample_submission.csv"
     if not sample_path.is_file():
         raise FileNotFoundError(f"Missing {sample_path}")
-    sample = pd.read_csv(sample_path)
-    id_col = "id" if "id" in sample.columns else sample.columns[0]
-
     test_paths = list_test_images(data_dir, test_subdir=args.test_subdir)
     path_by_id = {p.stem: p for p in test_paths}
+    path_by_id.update({p.name: p for p in test_paths})
+
+    sample = pd.read_csv(sample_path)
+    id_col = "id" if "id" in sample.columns else sample.columns[0]
+    n_sample = len(sample)
+    n_test = len(test_paths)
+    if n_sample > n_test + 10:
+        raise ValueError(
+            f"sample_submission.csv has {n_sample} rows but {args.test_subdir}/ has "
+            f"{n_test} images. Rebuild with:\n"
+            f"  python -m data.fix_sample_submission --data_path {args.data_path} --limit 100"
+        )
 
     rows = []
     for img_id in tqdm(sample[id_col].astype(str), desc="inference"):

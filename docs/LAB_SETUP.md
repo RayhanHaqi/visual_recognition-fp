@@ -167,15 +167,17 @@ Optional: remove archive after successful extract to save disk:
 
 ```bash
 bash scripts/run_tests.sh
-bash scripts/run_phase1.sh 0
+bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
 ```
 
 Or step by step:
 
 ```bash
-python train.py --run_name baseline --epochs 30 --batch_size 16 --gpu 0 --use_tiles
-python inference.py checkpoints/baseline_best.pth --run_name baseline --gpu 0 --shifts 5
-bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
+python train.py --run_name fp_resnet50_e30_bs128_t299_v2 --epochs 30 --batch_size 128 --gpu 1 --tile_size 299 --val_shifts 1 --use_tiles
+python -m data.fix_sample_submission --data_path datasets --limit 100
+python validate.py checkpoints/fp_resnet50_e30_bs128_t299_v2_best.pth --gpu 1 --shifts 5 --stride 299
+python inference.py checkpoints/fp_resnet50_e30_bs128_t299_v2_best.pth --run_name fp_resnet50_e30_bs128_t299_v2 --gpu 1 --shifts 5 --stride 299
+bash scripts/submit.sh submission/fp_resnet50_e30_bs128_t299_v2.csv "FP resnet50 v2"
 ```
 
 ---
@@ -189,7 +191,7 @@ bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
 | No `.7z` for 30+ min, RAM high | Kaggle buffering | Wait; if >60 min no file, check `download.log` and restart |
 | Process gone, no file | tmux server died, OOM, or crash | `dmesg \| tail` (if allowed); restart `nohup` |
 | `96G` file `Kaggle-NOAA-SeaLions`, `file` = `data` | Dead torrent / aria2 | `rm` it; download **`KaggleNOAASeaLions.7z`** via Kaggle API only |
-| Watching wrong path | Torrent name vs API name | Watch **`KaggleNOAASeaLions.7z`** only |
+| Inference ETA ~12 hours | `sample_submission.csv` has thousands of rows | `python -m data.fix_sample_submission --data_path datasets --limit 100` |
 
 ---
 
@@ -202,5 +204,5 @@ kaggle competitions download -c <competition> -f KaggleNOAASeaLions.7z -p .
 file KaggleNOAASeaLions.7z && 7z t ...          # verify
 7z x KaggleNOAASeaLions.7z -odatasets -p"$(cat data_password.txt)"
 python setup.py --preprocess && python setup.py
-bash scripts/run_phase1.sh 0
+bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
 ```

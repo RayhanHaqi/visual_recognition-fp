@@ -10,7 +10,7 @@
 #
 # Skip steps (set env var to 1):
 #   SKIP_INSTALL SKIP_DOWNLOAD SKIP_PREPROCESS SKIP_SETUP SKIP_TESTS
-#   SKIP_TRAIN SKIP_VALIDATE SKIP_INFER SKIP_SUBMIT
+#   SKIP_TRAIN SKIP_VALIDATE SKIP_FIX_SAMPLE SKIP_INFER SKIP_SUBMIT
 #
 # Restart training (kill stale train.py first): RESTART=1
 # Override run name: RUN_NAME=my_run
@@ -100,6 +100,11 @@ if [[ "${SKIP_VALIDATE:-0}" != "1" ]]; then
 fi
 
 if [[ "${SKIP_INFER:-0}" != "1" ]]; then
+  if [[ "${SKIP_FIX_SAMPLE:-0}" != "1" ]]; then
+    echo "--- Fix sample_submission.csv (100 test rows) ---"
+    python -m data.fix_sample_submission --data_path datasets --limit 100
+  fi
+
   echo "--- Inference ---"
   python inference.py "checkpoints/${RUN_NAME}_best.pth" \
     --run_name "$RUN_NAME" \
@@ -108,7 +113,7 @@ if [[ "${SKIP_INFER:-0}" != "1" ]]; then
     --stride "$TILE"
 fi
 
-if [[ "${SKIP_SUBMIT:-0}" != "1" ]]; then
+if [[ "${SKIP_SUBMIT:-0}" != "1" && "${SKIP_INFER:-0}" != "1" ]]; then
   echo "--- Kaggle submit ---"
   bash scripts/submit.sh "submission/${RUN_NAME}.csv" "$SUBMIT_MSG"
 fi
