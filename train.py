@@ -189,8 +189,11 @@ def main():
         dot_cache_path = Path(args.dot_cache)
         if not dot_cache_path.is_absolute():
             dot_cache_path = ROOT / dot_cache_path
-        if args.build_dot_cache or not dot_cache_path.is_file():
-            print(f"Building dot cache -> {dot_cache_path}")
+        if not dot_cache_path.is_file() or args.build_dot_cache:
+            if not dot_cache_path.is_file():
+                print(f"Building dot cache -> {dot_cache_path}")
+            else:
+                print(f"Rebuilding dot cache -> {dot_cache_path}")
             build_dot_cache(data_dir, dot_cache_path)
         dots_by_image = load_dot_cache(dot_cache_path)
         n_dots = sum(len(v) for v in dots_by_image.values())
