@@ -1,0 +1,7 @@
+# Git LFS — large binaries (see docs/GIT_LFS.md)
+*.pth filter=lfs diff=lfs merge=lfs -text
+*.pt filter=lfs diff=lfs merge=lfs -text
+*.7z filter=lfs diff=lfs merge=lfs -text
+datasets/Train/** filter=lfs diff=lfs merge=lfs -text
+datasets/TrainDotted/** filter=lfs diff=lfs merge=lfs -text
+datasets/Test/** filter=lfs diff=lfs merge=lfs -text
