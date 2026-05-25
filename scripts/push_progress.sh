@@ -15,12 +15,16 @@ MSG="${2:-Add FP logs and submission for ${RUN_NAME}.}"
 
 LOG_CSV="log/${RUN_NAME}.csv"
 SUB_CSV="submission/${RUN_NAME}.csv"
+KAGGLE_CSV="submission/${RUN_NAME}_kaggle.csv"
+FULL_CSV="submission/${RUN_NAME}_full.csv"
 
 git pull
 
 to_add=()
 [[ -f "$LOG_CSV" ]] && to_add+=("$LOG_CSV")
 [[ -f "$SUB_CSV" ]] && to_add+=("$SUB_CSV")
+[[ -f "$KAGGLE_CSV" ]] && to_add+=("$KAGGLE_CSV")
+[[ -f "$FULL_CSV" ]] && to_add+=("$FULL_CSV")
 
 if [[ ${#to_add[@]} -eq 0 ]]; then
   echo "ERROR: nothing to add. Expected at least: $LOG_CSV"
