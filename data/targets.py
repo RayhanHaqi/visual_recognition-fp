@@ -29,9 +29,12 @@ def load_train_counts(data_dir: Path, exclude_mismatched: bool = True) -> pd.Dat
 
     df = pd.read_csv(csv_path)
     if "id" in df.columns:
+        df["id"] = df["id"].astype(str)
         df = df.set_index("id", drop=False)
     else:
-        df = df.rename(columns={df.columns[0]: "id"}).set_index("id", drop=False)
+        df = df.rename(columns={df.columns[0]: "id"})
+        df["id"] = df["id"].astype(str)
+        df = df.set_index("id", drop=False)
 
     missing = [c for c in COUNT_COLUMNS if c not in df.columns]
     if missing:

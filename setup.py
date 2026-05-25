@@ -477,12 +477,16 @@ def download_dataset(
 
     if not _train_csv_valid(data_dir):
         print(
-            "Downloading train.csv from Kaggle "
-            "(labels file — not Train/train.csv inside the .7z).",
+            "Fetching train.csv labels (not on Kaggle API; not Train/train.csv in .7z).",
             flush=True,
         )
-        if _download_kaggle_file("train.csv", data_dir) != 0:
-            print("ERROR: could not download train.csv.")
+        script = ROOT / "scripts" / "fetch_train_csv.py"
+        rc = subprocess.run(
+            [sys.executable, str(script), "--out", str(data_dir / "train.csv")],
+            cwd=ROOT,
+        ).returncode
+        if rc != 0:
+            print("ERROR: could not fetch train.csv.")
             return 1
 
     if not check_dataset_exists(data_dir):

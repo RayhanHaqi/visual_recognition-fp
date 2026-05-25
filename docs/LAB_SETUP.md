@@ -141,9 +141,9 @@ PASS=$(cat data_password.txt)
 mkdir -p datasets
 7z x KaggleNOAASeaLions.7z -odatasets -p"$PASS"
 
-# Labels CSV is a separate Kaggle file — NOT Train/train.csv inside the archive
+# train.csv is NOT on Kaggle API — fetch corrected labels (not Train/train.csv in .7z)
+python scripts/fetch_train_csv.py
 source scripts/kaggle_env.sh
-bash scripts/kaggle_curl_download.sh train.csv datasets
 bash scripts/kaggle_curl_download.sh MismatchedTrainImages.txt datasets
 
 head -1 datasets/train.csv
