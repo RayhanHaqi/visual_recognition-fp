@@ -62,7 +62,14 @@ python setup.py
 
 ```bash
 bash scripts/run_tests.sh
-bash scripts/run_phase1.sh 0
+bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
+```
+
+Resume after training (infer + submit only):
+
+```bash
+SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 SKIP_TRAIN=1 \
+  bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
 ```
 
 ---
@@ -91,8 +98,8 @@ bash scripts/submit.sh submission/baseline.csv "FP baseline v1"
 Resume pipeline:
 
 ```bash
-SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 \
-  bash scripts/run_phase1.sh 0
+SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 SKIP_TRAIN=1 \
+  bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
 ```
 
 **Prediction contract:** per-tile counts; image prediction = **sum** of unique tile windows (`data/predict.py`).

@@ -1,49 +1,9 @@
 #!/bin/bash
+# Train + inference (no Kaggle submit). Delegates to run_phase1.sh.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-# shellcheck disable=SC1091
-source scripts/conda_env.sh
-
-BACKBONE=${1:-resnet50}
-EPOCHS=${2:-30}
-BS=${3:-16}
-LR=${4:-1e-4}
-GPU=${5:-0}
-TILE=${6:-299}
-WORKERS=${7:-0}
-
-RUN_NAME="fp_${BACKBONE}_e${EPOCHS}_bs${BS}_t${TILE}"
-
-echo "=================================================="
-echo "FP train pipeline: $RUN_NAME"
-echo "=================================================="
-
-python train.py \
-  --run_name "$RUN_NAME" \
-  --backbone "$BACKBONE" \
-  --epochs "$EPOCHS" \
-  --batch_size "$BS" \
-  --lr "$LR" \
-  --tile_size "$TILE" \
-  --gpu "$GPU" \
-  --workers "$WORKERS" \
-  --use_tiles
-
-echo "Inference..."
-python inference.py "checkpoints/${RUN_NAME}_best.pth" \
-  --run_name "$RUN_NAME" \
-  --gpu "$GPU" \
-  --shifts 5 \
-  --stride "$TILE"
-
-echo "Done. Submission: submission/${RUN_NAME}.csv"
-echo ""
-echo "=================================================="
-echo "NEXT: submit to Kaggle"
-echo "=================================================="
-echo "source scripts/kaggle_env.sh"
-echo "bash scripts/submit.sh submission/${RUN_NAME}.csv \"FP ${RUN_NAME}\""
-echo ""
-echo "Optional: bash scripts/push_progress.sh ${RUN_NAME}"
+SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 \
+SKIP_VALIDATE=1 SKIP_SUBMIT=1 \
+  bash scripts/run_phase1.sh "$@"

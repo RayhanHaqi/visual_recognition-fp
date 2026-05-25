@@ -30,10 +30,10 @@ conda activate "$FP_CONDA_ENV"
 cd FP
 python setup.py --install --download --preprocess
 bash scripts/run_tests.sh
-bash scripts/run_phase1.sh 0
+bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2
 ```
 
-Resume: `SKIP_DOWNLOAD=1 SKIP_TRAIN=1 bash scripts/run_phase1.sh 0`
+Resume: `SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 SKIP_TRAIN=1 bash scripts/run_phase1.sh resnet50 30 128 1e-4 1 299 0 v2`
 
 **Prediction:** per-tile counts → image total = **sum** of unique tiles (`data/predict.py`).
 
