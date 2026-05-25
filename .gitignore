@@ -2,6 +2,7 @@
 .kaggle/*
 !.kaggle/kaggle.json.example
 kaggle.json
+data_password.txt
 
 # Data and model weights — local only; re-download / re-train on each machine
 datasets/

@@ -86,6 +86,24 @@ def parse_args():
         default=None,
         help="Val tile stride (default: tile_size = non-overlapping sum grid)",
     )
+    p.add_argument(
+        "--label_mode",
+        type=str,
+        default="area",
+        choices=["area", "dots"],
+        help="Tile target: area-fraction of image counts or TrainDotted dot counts",
+    )
+    p.add_argument(
+        "--dot_cache",
+        type=str,
+        default="./datasets/dot_labels.csv",
+        help="CSV cache from python -m data.dots",
+    )
+    p.add_argument(
+        "--build_dot_cache",
+        action="store_true",
+        help="Build dot cache before training if missing",
+    )
     return p.parse_args()
 
 
@@ -163,12 +181,29 @@ def main():
     )
     print(f"Train images: {len(train_paths)}, Val images: {len(val_paths)}")
 
+    dot_cache_path = None
+    dots_by_image = None
+    if args.use_tiles and args.label_mode == "dots":
+        from data.dots import build_dot_cache, load_dot_cache
+
+        dot_cache_path = Path(args.dot_cache)
+        if not dot_cache_path.is_absolute():
+            dot_cache_path = ROOT / dot_cache_path
+        if args.build_dot_cache or not dot_cache_path.is_file():
+            print(f"Building dot cache -> {dot_cache_path}")
+            build_dot_cache(data_dir, dot_cache_path)
+        dots_by_image = load_dot_cache(dot_cache_path)
+        n_dots = sum(len(v) for v in dots_by_image.values())
+        print(f"Loaded dot cache: {len(dots_by_image)} images, {n_dots} dots")
+
     if args.use_tiles:
         train_ds = SeaLionTileDataset(
             train_paths, counts_df,
             tile_size=args.tile_size,
             tiles_per_image=args.tiles_per_image,
             train=True,
+            label_mode=args.label_mode,
+            dots_by_image=dots_by_image,
         )
     else:
         train_ds = SeaLionImageDataset(
@@ -200,6 +235,8 @@ def main():
     best_rmse = float("inf")
     args_dict = vars(args)
     args_dict["count_columns"] = COUNT_COLUMNS
+    if args.label_mode == "dots":
+        args_dict["dot_cache"] = str(dot_cache_path)
 
     for epoch in range(1, args.epochs + 1):
         epoch_t0 = time.perf_counter()

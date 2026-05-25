@@ -39,6 +39,18 @@ fi
 SHIFTS=${SHIFTS:-5}
 SUBMIT_MSG=${SUBMIT_MSG:-"FP ${RUN_NAME}"}
 
+LABEL_MODE=${LABEL_MODE:-area}
+BUILD_DOT_CACHE=${BUILD_DOT_CACHE:-0}
+
+TRAIN_EXTRA=()
+if [[ "$LABEL_MODE" == "dots" ]]; then
+  TRAIN_EXTRA+=(--label_mode dots)
+  if [[ "$BUILD_DOT_CACHE" == "1" ]]; then
+    TRAIN_EXTRA+=(--build_dot_cache)
+  fi
+fi
+
+
 # shellcheck disable=SC1091
 source "$(dirname "$0")/conda_env.sh"
 # shellcheck disable=SC1091
@@ -88,7 +100,8 @@ if [[ "${SKIP_TRAIN:-0}" != "1" ]]; then
     --gpu "$GPU" \
     --workers "$WORKERS" \
     --val_shifts 1 \
-    --use_tiles
+    --use_tiles \
+    "${TRAIN_EXTRA[@]}"
 fi
 
 if [[ "${SKIP_VALIDATE:-0}" != "1" ]]; then

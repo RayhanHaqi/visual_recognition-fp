@@ -52,7 +52,8 @@ class SeaLionImageDataset(Dataset):
 class SeaLionTileDataset(Dataset):
     """
     Random crops from training images.
-    Target = image counts scaled by crop area fraction (proportional allocation).
+    label_mode='area': target = image counts * crop area fraction.
+    label_mode='dots': target = dot counts inside crop (from TrainDotted cache).
     """
 
     def __init__(
@@ -62,12 +63,16 @@ class SeaLionTileDataset(Dataset):
         tile_size: int = 299,
         tiles_per_image: int = 8,
         train: bool = True,
+        label_mode: str = "area",
+        dots_by_image: dict | None = None,
     ):
         self.paths = image_paths
         self.counts_df = counts_df
         self.tile_size = tile_size
         self.tiles_per_image = tiles_per_image
         self.train = train
+        self.label_mode = label_mode
+        self.dots_by_image = dots_by_image or {}
         self.transform = build_train_transform(tile_size) if train else build_eval_transform(tile_size)
         self._length = len(image_paths) * tiles_per_image
 
@@ -87,6 +92,7 @@ class SeaLionTileDataset(Dataset):
             crop = img[y0 : y0 + ts, x0 : x0 + ts]
             frac = (ts * ts) / max(1, w * h)
         else:
+            x0, y0 = 0, 0
             crop = img
             frac = 1.0
 
@@ -94,8 +100,15 @@ class SeaLionTileDataset(Dataset):
             crop = random_geom_augment(crop)
 
         tensor = self.transform(Image.fromarray(crop))
-        full = counts_for_image(self.counts_df, img_id)
-        target = torch.from_numpy((full * frac).astype(np.float32))
+        if self.label_mode == "dots":
+            from data.dots import counts_in_crop
+
+            dots = self.dots_by_image.get(img_id, [])
+            target_np = counts_in_crop(dots, x0, y0, ts)
+        else:
+            full = counts_for_image(self.counts_df, img_id)
+            target_np = (full * frac).astype(np.float32)
+        target = torch.from_numpy(target_np)
         return tensor, target, img_id
 
 
