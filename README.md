@@ -107,6 +107,7 @@ SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_TESTS=1 \
 | `log/*.csv`, `submission/*.csv` | **Yes** (see [docs/GIT_PROGRESS.md](docs/GIT_PROGRESS.md)) |
 | `.kaggle/kaggle.json` | **No** |
 | `datasets/` (~100+ GB after extract) | **No** |
+| `*.7z`, `KaggleNOAASeaLions.7z`, `TrainSmall2.7z` | **No** |
 | `checkpoints/*.pth` | **No** |
 
 ---
