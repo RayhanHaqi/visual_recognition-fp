@@ -73,6 +73,18 @@ def parse_args():
     p.add_argument("--save_path", type=str, default="./checkpoints")
     p.add_argument("--log_path", type=str, default="./log")
     p.add_argument("--pct_start", type=float, default=0.1)
+    p.add_argument(
+        "--val_shifts",
+        type=int,
+        default=1,
+        help="Shifts for in-training validation (1 = fast; inference may use 5)",
+    )
+    p.add_argument(
+        "--val_stride",
+        type=int,
+        default=None,
+        help="Val tile stride (default: tile_size = non-overlapping sum grid)",
+    )
     return p.parse_args()
 
 
@@ -87,12 +99,12 @@ def evaluate_images(
     stride=None,
     batch_size=8,
 ):
-    """Tiled sum aggregation — same contract as inference.py / validate.py."""
+    """Tiled aggregation for validation during training."""
     if not val_paths:
         return float("nan")
     from data.targets import counts_for_image
 
-    stride = stride or tile_size // 2
+    stride = stride if stride is not None else tile_size
     preds, tgts = [], []
     for path in tqdm(val_paths, desc="val", leave=False):
         preds.append(
@@ -201,8 +213,8 @@ def main():
             counts_df,
             args.tile_size,
             device,
-            shifts=3,
-            stride=args.tile_size // 2,
+            shifts=args.val_shifts,
+            stride=args.val_stride if args.val_stride is not None else args.tile_size,
             batch_size=args.batch_size,
         )
         val_secs = time.perf_counter() - val_t0
