@@ -39,3 +39,11 @@ python inference.py "checkpoints/${RUN_NAME}_best.pth" \
   --stride "$TILE"
 
 echo "Done. Submission: submission/${RUN_NAME}.csv"
+echo ""
+echo "=================================================="
+echo "NEXT: submit to Kaggle"
+echo "=================================================="
+echo "source scripts/kaggle_env.sh"
+echo "bash scripts/submit.sh submission/${RUN_NAME}.csv \"FP ${RUN_NAME}\""
+echo ""
+echo "Optional: bash scripts/push_progress.sh ${RUN_NAME}"
