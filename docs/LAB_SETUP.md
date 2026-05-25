@@ -191,7 +191,9 @@ bash scripts/submit.sh submission/fp_resnet50_e30_bs128_t299_v2.csv "FP resnet50
 | No `.7z` for 30+ min, RAM high | Kaggle buffering | Wait; if >60 min no file, check `download.log` and restart |
 | Process gone, no file | tmux server died, OOM, or crash | `dmesg \| tail` (if allowed); restart `nohup` |
 | `96G` file `Kaggle-NOAA-SeaLions`, `file` = `data` | Dead torrent / aria2 | `rm` it; download **`KaggleNOAASeaLions.7z`** via Kaggle API only |
-| Inference ETA ~12 hours | `sample_submission.csv` has thousands of rows | `python -m data.fix_sample_submission --data_path datasets --limit 100` |
+| Inference ETA ~12 hours | Running model on every sample row | Use cached inference (latest code): only ~100 Test images are scored; decoy rows are zero-filled |
+| Submission row count mismatch | Overwrote official sample with 100-row rebuild | Restore `datasets/sample_submission.csv` from 7z; expand with `python -m data.expand_submission` |
+| Kaggle rejects columns | Wrong schema (`id`, `subadult_females`) | `python -m data.convert_submission submission/<run>.csv --output submission/<run>_kaggle.csv` |
 
 ---
 
