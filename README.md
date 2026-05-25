@@ -49,6 +49,11 @@ file KaggleNOAASeaLions.7z          # must: 7-zip archive
 
 mkdir -p datasets
 7z x KaggleNOAASeaLions.7z -odatasets -p"$(cat data_password.txt)"
+
+# train.csv is a separate Kaggle file (not Train/train.csv inside the .7z)
+bash scripts/kaggle_curl_download.sh train.csv datasets
+bash scripts/kaggle_curl_download.sh MismatchedTrainImages.txt datasets
+
 python setup.py --preprocess
 python setup.py
 ```

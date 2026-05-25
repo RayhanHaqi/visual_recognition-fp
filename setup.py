@@ -33,6 +33,17 @@ REQUIRED_FILES = [
 OPTIONAL_FILES = ["coords-threeplusone-v0.4.csv"]
 
 
+def _train_csv_valid(data_dir: Path) -> bool:
+    """True when datasets/train.csv has competition count columns (not Train/train.csv)."""
+    try:
+        from data.targets import load_train_counts
+
+        load_train_counts(data_dir, exclude_mismatched=False)
+        return True
+    except (FileNotFoundError, ValueError):
+        return False
+
+
 def check_dataset_exists(data_dir: Path = DATA_DIR) -> bool:
     if not data_dir.is_dir():
         return False
@@ -42,7 +53,7 @@ def check_dataset_exists(data_dir: Path = DATA_DIR) -> bool:
     for name in REQUIRED_FILES:
         if not (data_dir / name).is_file():
             return False
-    return True
+    return _train_csv_valid(data_dir)
 
 
 def dataset_summary(data_dir: Path = DATA_DIR) -> dict:
@@ -458,11 +469,21 @@ def download_dataset(
         print(f"ERROR: missing {archive_name} after download.")
         return 1
 
+    if _extract_archive(archive_path, data_dir, force=force) != 0:
+        return 1
+
     if _download_kaggle_file(MISMATCHED_FILE, data_dir) != 0:
         print(f"WARNING: could not download {MISMATCHED_FILE}; may exist inside archive.")
 
-    if _extract_archive(archive_path, data_dir, force=force) != 0:
-        return 1
+    if not _train_csv_valid(data_dir):
+        print(
+            "Downloading train.csv from Kaggle "
+            "(labels file — not Train/train.csv inside the .7z).",
+            flush=True,
+        )
+        if _download_kaggle_file("train.csv", data_dir) != 0:
+            print("ERROR: could not download train.csv.")
+            return 1
 
     if not check_dataset_exists(data_dir):
         print("ERROR: dataset still incomplete after extract.")

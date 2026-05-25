@@ -141,11 +141,19 @@ PASS=$(cat data_password.txt)
 mkdir -p datasets
 7z x KaggleNOAASeaLions.7z -odatasets -p"$PASS"
 
+# Labels CSV is a separate Kaggle file — NOT Train/train.csv inside the archive
+source scripts/kaggle_env.sh
+bash scripts/kaggle_curl_download.sh train.csv datasets
+bash scripts/kaggle_curl_download.sh MismatchedTrainImages.txt datasets
+
+head -1 datasets/train.csv
+# expect: id,adult_males,adult_females,subadult_males,subadult_females,pups
+
 python setup.py --preprocess
 python setup.py
 ```
 
-Expected under `datasets/`: `Train/`, `TrainDotted/`, `Test/`, `train.csv`, etc.
+Expected under `datasets/`: `Train/`, `TrainDotted/`, `Test/`, `train.csv` (Kaggle labels), etc.
 
 Optional: remove archive after successful extract to save disk:
 
