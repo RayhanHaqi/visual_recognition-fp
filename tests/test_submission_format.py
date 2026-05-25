@@ -7,7 +7,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from data.targets import COUNT_COLUMNS, load_train_counts
+from data.targets import COUNT_COLUMNS, SUBMISSION_COLUMNS, SUBMISSION_ID_COL, load_train_counts
 
 
 def test_train_counts_load(mini_data_dir):
@@ -19,8 +19,8 @@ def test_train_counts_load(mini_data_dir):
 
 def test_submission_columns_match_sample(mini_data_dir):
     sample = pd.read_csv(mini_data_dir / "sample_submission.csv")
-    id_col = "id" if "id" in sample.columns else sample.columns[0]
-    assert id_col in sample.columns
+    assert list(sample.columns) == SUBMISSION_COLUMNS
+    assert SUBMISSION_ID_COL in sample.columns
     for c in COUNT_COLUMNS:
         assert c in sample.columns
 

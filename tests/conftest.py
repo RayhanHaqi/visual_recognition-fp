@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from data.targets import COUNT_COLUMNS
+from data.targets import COUNT_COLUMNS, SUBMISSION_ID_COL, pred_vector_to_submission_row
 
 
 @pytest.fixture
@@ -30,9 +30,9 @@ def mini_data_dir(tmp_path):
         rows.append({
             "id": Path(name).stem,
             "adult_males": float(i),
-            "adult_females": 1.0,
             "subadult_males": 0.5,
-            "subadult_females": 0.0,
+            "adult_females": 1.0,
+            "juveniles": 0.0,
             "pups": 2.0,
         })
 
@@ -43,7 +43,7 @@ def mini_data_dir(tmp_path):
     pd.DataFrame(rows).to_csv(d / "train.csv", index=False)
     sub_rows = []
     for j in range(2):
-        row = {"id": f"test_{j:03d}.jpg"}
+        row = {SUBMISSION_ID_COL: f"test_{j:03d}"}
         for col in COUNT_COLUMNS:
             row[col] = 0
         sub_rows.append(row)

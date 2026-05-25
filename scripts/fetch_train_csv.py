@@ -14,18 +14,22 @@ SOURCE_URL = (
     "https://raw.githubusercontent.com/LivingProgram/kaggle-sea-lion-data/"
     "master/correct_train.csv"
 )
-COUNT_COLUMNS = [
+
+# Internal train.csv: id + official Kaggle count columns.
+OUTPUT_COLUMNS = [
     "id",
     "adult_males",
-    "adult_females",
     "subadult_males",
-    "subadult_females",
+    "adult_females",
+    "juveniles",
     "pups",
 ]
 
 
 def fetch_train_csv(out_path: Path) -> None:
     import pandas as pd
+
+    from data.targets import _normalize_train_columns
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading labels from {SOURCE_URL}", flush=True)
@@ -35,13 +39,15 @@ def fetch_train_csv(out_path: Path) -> None:
     tmp = out_path.with_suffix(".csv.tmp")
     tmp.write_bytes(raw)
     try:
-        df = pd.read_csv(tmp)
-        df = df.rename(columns={"train_id": "id", "juveniles": "subadult_females"})
-        missing = [c for c in COUNT_COLUMNS if c not in df.columns]
-        if missing:
-            raise ValueError(f"Downloaded labels missing columns: {missing}")
-        df = df[COUNT_COLUMNS]
-        df["id"] = df["id"].astype(str)
+        df = _normalize_train_columns(pd.read_csv(tmp))
+        missing = [c for c in OUTPUT_COLUMNS if c not in df.columns and c != "id"]
+        # Allow train_id-only source files; juveniles must exist after normalize.
+        if "juveniles" not in df.columns:
+            raise ValueError("Downloaded labels missing juveniles column")
+        for col in OUTPUT_COLUMNS[1:]:
+            if col not in df.columns:
+                raise ValueError(f"Downloaded labels missing column: {col}")
+        df = df[OUTPUT_COLUMNS]
         df.to_csv(out_path, index=False)
     finally:
         tmp.unlink(missing_ok=True)

@@ -147,7 +147,7 @@ source scripts/kaggle_env.sh
 bash scripts/kaggle_curl_download.sh MismatchedTrainImages.txt datasets
 
 head -1 datasets/train.csv
-# expect: id,adult_males,adult_females,subadult_males,subadult_females,pups
+# expect: test_id,adult_males,subadult_males,adult_females,juveniles,pups
 
 python setup.py --preprocess
 python setup.py

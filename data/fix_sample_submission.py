@@ -1,4 +1,4 @@
-"""Rebuild datasets/sample_submission.csv from Test/*.jpg (official 100-image layout)."""
+"""Rebuild datasets/sample_submission.csv from Test/*.jpg (official Kaggle layout)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.targets import COUNT_COLUMNS, list_test_images
+from data.targets import COUNT_COLUMNS, SUBMISSION_COLUMNS, SUBMISSION_ID_COL, list_test_images, normalize_test_id
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -19,10 +19,10 @@ def build_sample(data_dir: Path, test_subdir: str = "Test", limit: int = 100) ->
     if not paths:
         raise FileNotFoundError(f"No test images under {data_dir / test_subdir}")
 
-    df = pd.DataFrame({"id": [p.name for p in paths]})
+    df = pd.DataFrame({SUBMISSION_ID_COL: [normalize_test_id(p.stem) for p in paths]})
     for col in COUNT_COLUMNS:
         df[col] = 0.0
-    return df
+    return df[SUBMISSION_COLUMNS]
 
 
 def main() -> None:

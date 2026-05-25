@@ -14,7 +14,7 @@ def test_predict_image_tiled_writes_csv(mini_data_dir, tmp_path):
     from utils.io import save_checkpoint
     from data.predict import predict_image_tiled
     import pandas as pd
-    from data.targets import COUNT_COLUMNS
+    from data.targets import COUNT_COLUMNS, LEGACY_COUNT_COLUMNS, pred_vector_to_submission_row
 
     ckpt = tmp_path / "fake_best.pth"
     model = build_counter("resnet18", pretrained=False)
@@ -27,18 +27,17 @@ def test_predict_image_tiled_writes_csv(mini_data_dir, tmp_path):
     load_checkpoint(ckpt, m, device)
 
     sample = pd.read_csv(mini_data_dir / "sample_submission.csv")
-    id_col = "id"
+    id_col = "test_id"
     rows = []
     for img_id in sample[id_col]:
-        path = mini_data_dir / "Test" / Path(img_id).name
+        path = mini_data_dir / "Test" / Path(str(img_id)).name
         if not path.is_file():
-            path = mini_data_dir / "Test" / f"{Path(img_id).stem}.jpg"
+            path = mini_data_dir / "Test" / f"{Path(str(img_id)).stem}.jpg"
         pred = predict_image_tiled(m, path, 128, device, shifts=1, stride=64, batch_size=2)
         assert pred.shape == (5,)
         assert (pred >= 0).all()
         row = {id_col: img_id}
-        for i, col in enumerate(COUNT_COLUMNS):
-            row[col] = max(0.0, float(pred[i]))
+        row.update(pred_vector_to_submission_row(pred, source_columns=LEGACY_COUNT_COLUMNS))
         rows.append(row)
 
     out = tmp_path / "out.csv"

@@ -17,7 +17,7 @@ def rmse_per_class(pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
     if pred.ndim == 1:
         names = [f"c{i}" for i in range(len(pred))]
         return {names[0]: float(np.abs(pred[0] - target[0]))}
-    names = ["adult_males", "adult_females", "subadult_males", "subadult_females", "pups"]
+    names = ["adult_males", "subadult_males", "adult_females", "juveniles", "pups"]
     if pred.shape[1] != 5:
         names = [f"c{i}" for i in range(pred.shape[1])]
     out = {}

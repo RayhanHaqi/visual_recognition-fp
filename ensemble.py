@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.targets import COUNT_COLUMNS
+from data.targets import COUNT_COLUMNS, SUBMISSION_ID_COL, submission_id_column
 
 
 def main():
@@ -17,7 +17,7 @@ def main():
     args = p.parse_args()
 
     sample = pd.read_csv(args.sample)
-    id_col = "id" if "id" in sample.columns else sample.columns[0]
+    id_col = submission_id_column(sample)
     cols = COUNT_COLUMNS
 
     dfs = [pd.read_csv(c) for c in args.csvs]

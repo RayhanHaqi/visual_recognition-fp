@@ -14,7 +14,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from data.predict import predict_image_tiled
-from data.targets import COUNT_COLUMNS, list_test_images
+from data.targets import (
+    COUNT_COLUMNS,
+    SUBMISSION_COLUMNS,
+    SUBMISSION_ID_COL,
+    count_columns_from_checkpoint,
+    list_test_images,
+    normalize_test_id,
+    pred_vector_to_submission_row,
+    submission_id_column,
+)
 from model.build import build_counter
 from utils.io import load_checkpoint
 
@@ -43,6 +52,7 @@ def main():
     backbone = ckpt_args.get("backbone", "resnet50")
     tile_size = args.tile_size or ckpt_args.get("tile_size", 299)
     stride = args.stride if args.stride is not None else tile_size
+    source_columns = count_columns_from_checkpoint(ckpt_args)
 
     model = build_counter(backbone, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)
@@ -56,7 +66,7 @@ def main():
     path_by_id.update({p.name: p for p in test_paths})
 
     sample = pd.read_csv(sample_path)
-    id_col = "id" if "id" in sample.columns else sample.columns[0]
+    id_col = submission_id_column(sample)
     n_sample = len(sample)
     n_test = len(test_paths)
     if n_sample > n_test + 10:
@@ -76,15 +86,14 @@ def main():
             model, path, tile_size, device,
             shifts=args.shifts, stride=stride, batch_size=args.batch_size,
         )
+        counts = pred_vector_to_submission_row(pred, source_columns=source_columns)
         if args.pup_scale != 1.0:
-            pred = pred.copy()
-            pred[4] *= args.pup_scale
-        row = {id_col: img_id}
-        for i, col in enumerate(COUNT_COLUMNS):
-            row[col] = max(0.0, float(pred[i]))
+            counts["pups"] *= args.pup_scale
+        row = {SUBMISSION_ID_COL: normalize_test_id(img_id)}
+        row.update(counts)
         rows.append(row)
 
-    out_df = pd.DataFrame(rows)
+    out_df = pd.DataFrame(rows)[SUBMISSION_COLUMNS]
     out_dir = ROOT / "submission"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = Path(args.output) if args.output else out_dir / f"{args.run_name}.csv"

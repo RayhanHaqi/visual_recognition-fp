@@ -23,6 +23,7 @@ from data.dataset import (
     build_train_val_paths,
 )
 from data.predict import predict_image_tiled
+from data.targets import COUNT_COLUMNS
 from model.build import build_counter
 from model.losses import rmse_loss
 from utils.io import append_log_row, init_log_csv, next_run_id, save_checkpoint
@@ -63,7 +64,7 @@ def parse_args():
         "--workers",
         type=int,
         default=0,
-        help="DataLoader workers (use 0 on CUDA; >0 can hang after epoch 1)",
+        help="DataLoader workers (use spawn if >0 on CUDA; try 4 on lab machine)",
     )
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--amp", action="store_true", default=True)
@@ -198,6 +199,7 @@ def main():
     best_path = save_dir / f"{args.run_name}_best.pth"
     best_rmse = float("inf")
     args_dict = vars(args)
+    args_dict["count_columns"] = COUNT_COLUMNS
 
     for epoch in range(1, args.epochs + 1):
         epoch_t0 = time.perf_counter()

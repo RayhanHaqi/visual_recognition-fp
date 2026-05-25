@@ -29,8 +29,14 @@ def test_safe_extract_and_layout(tmp_path):
         zf.writestr("Train/a.jpg", b"x")
         zf.writestr("TrainDotted/a.jpg", b"x")
         zf.writestr("Test/b.jpg", b"y")
-        zf.writestr("train.csv", "id,adult_males,adult_females,subadult_males,subadult_females,pups\n")
-        zf.writestr("sample_submission.csv", "id,adult_males,adult_females,subadult_males,subadult_females,pups\n")
+        zf.writestr(
+            "train.csv",
+            "id,adult_males,subadult_males,adult_females,juveniles,pups\n",
+        )
+        zf.writestr(
+            "sample_submission.csv",
+            "test_id,adult_males,subadult_males,adult_females,juveniles,pups\n",
+        )
         zf.writestr("MismatchedTrainImages.txt", "")
 
     _safe_extract_zip(zpath, extract_to)

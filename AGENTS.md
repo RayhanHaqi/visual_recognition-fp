@@ -10,7 +10,7 @@
 - URL: https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count
 - Task: Predict 5 non-negative counts per aerial image (regression, not bbox detection)
 - Metric: **RMSE** (lower is better)
-- Columns: `adult_males`, `adult_females`, `subadult_males`, `subadult_females`, `pups`
+- Columns: `test_id`, `adult_males`, `subadult_males`, `adult_females`, `juveniles`, `pups`
 
 ## Course grading (model performance, 50%)
 - Golden medal (weak baseline): ~25 pts — historical golden ~15.88–10.86 RMSE
