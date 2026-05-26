@@ -9,6 +9,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
+from data.dots import Dot, counts_in_crop
 from data.targets import (
     COUNT_COLUMNS,
     counts_for_image,
@@ -65,6 +66,8 @@ class SeaLionTileDataset(Dataset):
         train: bool = True,
         label_mode: str = "area",
         dots_by_image: dict | None = None,
+        balanced_positive_fraction: float = 0.5,
+        background_tries: int = 20,
     ):
         self.paths = image_paths
         self.counts_df = counts_df
@@ -73,11 +76,59 @@ class SeaLionTileDataset(Dataset):
         self.train = train
         self.label_mode = label_mode
         self.dots_by_image = dots_by_image or {}
+        self.balanced_positive_fraction = balanced_positive_fraction
+        self.background_tries = background_tries
         self.transform = build_train_transform(tile_size) if train else build_eval_transform(tile_size)
         self._length = len(image_paths) * tiles_per_image
 
     def __len__(self):
         return self._length
+
+    def _random_crop_origin(self, width: int, height: int) -> tuple[int, int]:
+        ts = self.tile_size
+        if width < ts or height < ts:
+            return 0, 0
+        x0 = np.random.randint(0, width - ts + 1) if self.train else (width - ts) // 2
+        y0 = np.random.randint(0, height - ts + 1) if self.train else (height - ts) // 2
+        return int(x0), int(y0)
+
+    def _dot_centered_crop_origin(self, dot: Dot, width: int, height: int) -> tuple[int, int]:
+        ts = self.tile_size
+        if width < ts or height < ts:
+            return 0, 0
+        jitter_x = np.random.randint(-ts // 4, ts // 4 + 1) if self.train else 0
+        jitter_y = np.random.randint(-ts // 4, ts // 4 + 1) if self.train else 0
+        x0 = int(np.clip(dot.x - ts // 2 + jitter_x, 0, width - ts))
+        y0 = int(np.clip(dot.y - ts // 2 + jitter_y, 0, height - ts))
+        return x0, y0
+
+    def _background_crop_origin(
+        self,
+        dots: list[Dot],
+        width: int,
+        height: int,
+    ) -> tuple[int, int]:
+        ts = self.tile_size
+        if width < ts or height < ts:
+            return 0, 0
+        for _ in range(self.background_tries):
+            x0, y0 = self._random_crop_origin(width, height)
+            if counts_in_crop(dots, x0, y0, ts).sum() == 0:
+                return x0, y0
+        return self._random_crop_origin(width, height)
+
+    def _balanced_crop_origin(
+        self,
+        img_id: str,
+        width: int,
+        height: int,
+    ) -> tuple[int, int]:
+        dots = self.dots_by_image.get(img_id, [])
+        want_positive = bool(dots) and np.random.random() < self.balanced_positive_fraction
+        if want_positive:
+            dot = dots[np.random.randint(0, len(dots))]
+            return self._dot_centered_crop_origin(dot, width, height)
+        return self._background_crop_origin(dots, width, height)
 
     def __getitem__(self, idx: int):
         path = self.paths[idx % len(self.paths)]
@@ -87,8 +138,10 @@ class SeaLionTileDataset(Dataset):
         ts = self.tile_size
 
         if w >= ts and h >= ts:
-            x0 = np.random.randint(0, w - ts + 1) if self.train else (w - ts) // 2
-            y0 = np.random.randint(0, h - ts + 1) if self.train else (h - ts) // 2
+            if self.label_mode == "balanced_dots":
+                x0, y0 = self._balanced_crop_origin(img_id, w, h)
+            else:
+                x0, y0 = self._random_crop_origin(w, h)
             crop = img[y0 : y0 + ts, x0 : x0 + ts]
             frac = (ts * ts) / max(1, w * h)
         else:
@@ -100,9 +153,7 @@ class SeaLionTileDataset(Dataset):
             crop = random_geom_augment(crop)
 
         tensor = self.transform(Image.fromarray(crop))
-        if self.label_mode == "dots":
-            from data.dots import counts_in_crop
-
+        if self.label_mode in {"dots", "balanced_dots"}:
             dots = self.dots_by_image.get(img_id, [])
             target_np = counts_in_crop(dots, x0, y0, ts)
         else:

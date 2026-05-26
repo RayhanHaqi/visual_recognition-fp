@@ -45,6 +45,15 @@ CLASS_MIN_SAT = {
 # Global dotted-image saturation gate before connected components.
 MASK_MIN_SAT = 35
 
+# Adult male dots are red, but JPEG compression often moves them away from pure
+# [255, 0, 0]. Use hue as a fallback while keeping brown female dots separated
+# by nearest eligible RGB distance.
+ADULT_MALE_HUE_MAX = 12
+ADULT_MALE_HUE_MIN_WRAP = 168
+ADULT_MALE_HSV_MIN_SAT = 50
+ADULT_MALE_HSV_MIN_VALUE = 80
+ADULT_MALE_HSV_SCORE = 105.0
+
 CLASS_TO_IDX = {name: i for i, name in enumerate(COUNT_COLUMNS)}
 
 
@@ -85,7 +94,9 @@ def _classify_colors(
 
     colors_f = colors.astype(np.float32)
     hsv = cv2.cvtColor(colors.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+    hue = hsv[:, 0].astype(np.int32)
     sat = hsv[:, 1].astype(np.int32)
+    val = hsv[:, 2].astype(np.int32)
     refs = np.stack([CLASS_RGB[name] for name in COUNT_COLUMNS])
     dists = np.linalg.norm(colors_f[:, None, :] - refs[None, :, :], axis=2)
 
@@ -95,6 +106,10 @@ def _classify_colors(
         for class_idx, name in enumerate(COUNT_COLUMNS):
             if dists[i, class_idx] <= CLASS_MAX_DIST[name] and sat[i] >= CLASS_MIN_SAT[name]:
                 eligible.append((float(dists[i, class_idx]), class_idx))
+        if (
+            hue[i] <= ADULT_MALE_HUE_MAX or hue[i] >= ADULT_MALE_HUE_MIN_WRAP
+        ) and sat[i] >= ADULT_MALE_HSV_MIN_SAT and val[i] >= ADULT_MALE_HSV_MIN_VALUE:
+            eligible.append((ADULT_MALE_HSV_SCORE, CLASS_TO_IDX["adult_males"]))
         if not eligible:
             continue
         _, winner = min(eligible, key=lambda item: item[0])

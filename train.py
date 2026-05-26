@@ -22,6 +22,8 @@ from data.dataset import (
     SeaLionTileDataset,
     build_train_val_paths,
 )
+from data.dot_cache_analysis import analyze_dot_cache, dot_cache_gate_failures
+from data.dots import build_dot_cache, load_dot_cache
 from data.predict import predict_image_tiled
 from data.targets import COUNT_COLUMNS
 from model.build import build_counter
@@ -90,7 +92,7 @@ def parse_args():
         "--label_mode",
         type=str,
         default="area",
-        choices=["area", "dots"],
+        choices=["area", "dots", "balanced_dots"],
         help="Tile target: area-fraction of image counts or TrainDotted dot counts",
     )
     p.add_argument(
@@ -103,6 +105,13 @@ def parse_args():
         "--build_dot_cache",
         action="store_true",
         help="Build dot cache before training if missing",
+    )
+    p.add_argument("--dot_gate_max_class_rel_err", type=float, default=0.10)
+    p.add_argument("--dot_gate_max_large_mismatch", type=int, default=None)
+    p.add_argument(
+        "--skip_dot_cache_gate",
+        action="store_true",
+        help="Allow balanced_dots training without passing dot-cache diagnostics",
     )
     return p.parse_args()
 
@@ -183,9 +192,7 @@ def main():
 
     dot_cache_path = None
     dots_by_image = None
-    if args.use_tiles and args.label_mode == "dots":
-        from data.dots import build_dot_cache, load_dot_cache
-
+    if args.use_tiles and args.label_mode in {"dots", "balanced_dots"}:
         dot_cache_path = Path(args.dot_cache)
         if not dot_cache_path.is_absolute():
             dot_cache_path = ROOT / dot_cache_path
@@ -198,6 +205,21 @@ def main():
         dots_by_image = load_dot_cache(dot_cache_path)
         n_dots = sum(len(v) for v in dots_by_image.values())
         print(f"Loaded dot cache: {len(dots_by_image)} images, {n_dots} dots")
+        if args.label_mode == "balanced_dots" and not args.skip_dot_cache_gate:
+            analysis = analyze_dot_cache(data_dir, dot_cache_path)
+            failures = dot_cache_gate_failures(
+                analysis,
+                max_class_rel_err=args.dot_gate_max_class_rel_err,
+                max_large_mismatch=args.dot_gate_max_large_mismatch,
+            )
+            if failures:
+                msg = "\n".join(f"  - {failure}" for failure in failures)
+                raise ValueError(
+                    "Dot cache failed balanced_dots quality gate. "
+                    "Rebuild/fix dot_labels.csv before training, or pass "
+                    "--skip_dot_cache_gate for an explicit diagnostic-only run.\n"
+                    f"{msg}"
+                )
 
     if args.use_tiles:
         train_ds = SeaLionTileDataset(

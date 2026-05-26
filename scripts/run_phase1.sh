@@ -43,8 +43,8 @@ LABEL_MODE=${LABEL_MODE:-area}
 BUILD_DOT_CACHE=${BUILD_DOT_CACHE:-0}
 
 TRAIN_EXTRA=()
-if [[ "$LABEL_MODE" == "dots" ]]; then
-  TRAIN_EXTRA+=(--label_mode dots)
+if [[ "$LABEL_MODE" == "dots" || "$LABEL_MODE" == "balanced_dots" ]]; then
+  TRAIN_EXTRA+=(--label_mode "$LABEL_MODE")
   if [[ "$BUILD_DOT_CACHE" == "1" ]]; then
     TRAIN_EXTRA+=(--build_dot_cache)
   fi

@@ -50,6 +50,15 @@ def test_extract_dots_finds_blue_and_red_small_dots():
     assert classes == sorted([CLASS_TO_IDX["adult_males"], CLASS_TO_IDX["juveniles"]])
 
 
+def test_extract_dots_keeps_faint_red_adult_male_dot():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    cv2.circle(dotted, (50, 50), 2, (255, 90, 90), -1)
+    dots = extract_dots_from_pair(train, dotted)
+    assert len(dots) == 1
+    assert dots[0].class_idx == CLASS_TO_IDX["adult_males"]
+
+
 def test_extract_dots_finds_faint_blue_and_brown_dots():
     train = np.full((100, 100, 3), 120, dtype=np.uint8)
     dotted = train.copy()
@@ -64,6 +73,14 @@ def test_extract_dots_rejects_unsaturated_diff_blobs():
     train = np.full((100, 100, 3), 120, dtype=np.uint8)
     dotted = train.copy()
     dotted[20:45, 20:45] = np.array([140, 110, 90], dtype=np.uint8)
+    dots = extract_dots_from_pair(train, dotted)
+    assert dots == []
+
+
+def test_extract_dots_rejects_unsaturated_reddish_terrain_patch():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    dotted[20:45, 20:45] = np.array([145, 105, 100], dtype=np.uint8)
     dots = extract_dots_from_pair(train, dotted)
     assert dots == []
 

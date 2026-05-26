@@ -169,6 +169,28 @@ def format_analysis_report(result: DotCacheAnalysisResult) -> str:
     return "\n".join(lines)
 
 
+def dot_cache_gate_failures(
+    result: DotCacheAnalysisResult,
+    max_class_rel_err: float = 0.10,
+    max_large_mismatch: int | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    for col in COUNT_COLUMNS:
+        rel_err = float(result.class_summary.loc[col, "rel_err"])
+        if rel_err > max_class_rel_err:
+            failures.append(f"{col} rel_err {rel_err:.3f} > {max_class_rel_err:.3f}")
+
+    if result.n_missing_dotted:
+        failures.append(f"missing TrainDotted pairs: {result.n_missing_dotted}")
+
+    if max_large_mismatch is not None:
+        large_mismatch = len(result.warnings.get("large_mismatch", []))
+        if large_mismatch > max_large_mismatch:
+            failures.append(f"large mismatches {large_mismatch} > {max_large_mismatch}")
+
+    return failures
+
+
 def write_analysis(result: DotCacheAnalysisResult, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.per_image.to_csv(output_path, index=False)
