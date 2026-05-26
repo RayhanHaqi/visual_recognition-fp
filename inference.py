@@ -3,6 +3,7 @@
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -26,11 +27,46 @@ from data.targets import (
 )
 from model.build import build_counter
 from utils.io import load_checkpoint
+from utils.timefmt import format_duration
+
+_INFER_BAR_FORMAT = (
+    "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]"
+)
 
 
 def _resolve_test_path(path_by_id: dict, img_id: str) -> Path | None:
     stem = Path(str(img_id)).stem
     return path_by_id.get(stem) or path_by_id.get(str(img_id)) or path_by_id.get(f"{stem}.jpg")
+
+
+def _plan_model_runs(
+    sample_ids: list[str],
+    path_by_id: dict,
+    zero_counts: dict[str, float],
+    max_images: int | None,
+) -> tuple[list[tuple[str, Path]], dict[str | int, dict[str, float]], int]:
+    """Unique test ids that need a model forward pass vs zero-fill cache entries."""
+    predict_list: list[tuple[str, Path]] = []
+    pred_cache: dict[str | int, dict[str, float]] = {}
+    n_zero = 0
+    seen: set[str | int] = set()
+
+    for img_id in sample_ids:
+        key = normalize_test_id(img_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        path = _resolve_test_path(path_by_id, img_id)
+        if path is None:
+            pred_cache[key] = zero_counts.copy()
+            n_zero += 1
+        elif max_images is not None and len(predict_list) >= max_images:
+            pred_cache[key] = zero_counts.copy()
+            n_zero += 1
+        else:
+            predict_list.append((key, path))
+
+    return predict_list, pred_cache, n_zero
 
 
 def main():
@@ -88,35 +124,54 @@ def main():
     n_test = len(test_paths)
     print(f"sample_submission rows: {n_sample} | {args.test_subdir} images: {n_test}")
 
-    pred_cache: dict[str | int, dict[str, float]] = {}
     zero_counts = {col: 0.0 for col in COUNT_COLUMNS}
-    rows = []
-    n_model = 0
-    n_zero = 0
+    sample_ids = sample[id_col].astype(str).tolist()
+    predict_list, pred_cache, n_zero = _plan_model_runs(
+        sample_ids, path_by_id, zero_counts, args.max_images
+    )
     profile = InferenceTimings() if args.profile_inference else None
 
-    for img_id in tqdm(sample[id_col].astype(str), desc="inference"):
-        key = normalize_test_id(img_id)
-        if key not in pred_cache:
-            path = _resolve_test_path(path_by_id, img_id)
-            if path is None:
-                pred_cache[key] = zero_counts.copy()
-                n_zero += 1
-            elif args.max_images is not None and n_model >= args.max_images:
-                pred_cache[key] = zero_counts.copy()
-                n_zero += 1
-            else:
-                pred = predict_image_tiled(
-                    model, path, tile_size, device,
-                    shifts=args.shifts, stride=stride, batch_size=args.batch_size,
-                    timings=profile,
-                )
-                counts = pred_vector_to_submission_row(pred, source_columns=source_columns)
-                if args.pup_scale != 1.0:
-                    counts["pups"] *= args.pup_scale
-                pred_cache[key] = counts
-                n_model += 1
+    n_model = len(predict_list)
+    print(
+        f"Model runs planned: {n_model} | "
+        f"zero-fill ids: {n_zero} | "
+        f"submission rows: {len(sample_ids)}"
+    )
 
+    run_t0 = time.perf_counter()
+    with tqdm(
+        total=n_model,
+        desc="inference",
+        unit="img",
+        bar_format=_INFER_BAR_FORMAT,
+    ) as pbar:
+        for key, path in predict_list:
+            pred = predict_image_tiled(
+                model, path, tile_size, device,
+                shifts=args.shifts, stride=stride, batch_size=args.batch_size,
+                timings=profile,
+            )
+            counts = pred_vector_to_submission_row(pred, source_columns=source_columns)
+            if args.pup_scale != 1.0:
+                counts["pups"] *= args.pup_scale
+            pred_cache[key] = counts
+            pbar.update(1)
+
+    total_elapsed = time.perf_counter() - run_t0
+    if n_model:
+        imgs_per_sec = n_model / total_elapsed
+        extra = ""
+        full_unique = len({normalize_test_id(i) for i in sample_ids})
+        if full_unique > n_model and imgs_per_sec > 0:
+            extra = f" | est. full {full_unique} imgs ~{format_duration(full_unique / imgs_per_sec)}"
+        print(
+            f"Inference elapsed: {format_duration(total_elapsed)} "
+            f"({imgs_per_sec:.3f} img/s){extra}"
+        )
+
+    rows = []
+    for img_id in sample_ids:
+        key = normalize_test_id(img_id)
         row = {SUBMISSION_ID_COL: key}
         row.update(pred_cache[key])
         rows.append(row)
