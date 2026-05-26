@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from data.predict import predict_image_tiled
+from data.predict import InferenceTimings, format_inference_profile, predict_image_tiled
 from data.targets import (
     COUNT_COLUMNS,
     SUBMISSION_ID_COL,
@@ -48,6 +48,11 @@ def main():
     p.add_argument("--pup_scale", type=float, default=1.0,
                    help="Optional post-process: scale pup counts")
     p.add_argument("--output", type=str, default=None)
+    p.add_argument(
+        "--profile_inference",
+        action="store_true",
+        help="Collect per-stage inference timings and write log/{run_name}_infer_profile.csv",
+    )
     args = p.parse_args()
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
@@ -61,6 +66,7 @@ def main():
 
     model = build_counter(backbone, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)
+    model.eval()
 
     data_dir = Path(args.data_path)
     sample_path = data_dir / "sample_submission.csv"
@@ -81,6 +87,7 @@ def main():
     rows = []
     n_model = 0
     n_zero = 0
+    profile = InferenceTimings() if args.profile_inference else None
 
     for img_id in tqdm(sample[id_col].astype(str), desc="inference"):
         key = normalize_test_id(img_id)
@@ -93,6 +100,7 @@ def main():
                 pred = predict_image_tiled(
                     model, path, tile_size, device,
                     shifts=args.shifts, stride=stride, batch_size=args.batch_size,
+                    timings=profile,
                 )
                 counts = pred_vector_to_submission_row(pred, source_columns=source_columns)
                 if args.pup_scale != 1.0:
@@ -113,6 +121,28 @@ def main():
         f"Wrote {out_path} ({len(out_df)} rows) | "
         f"model runs={n_model} | zero-fill ids={n_zero}"
     )
+
+    if profile is not None:
+        summary = format_inference_profile(profile)
+        log_dir = ROOT / "log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        profile_path = log_dir / f"{args.run_name}_infer_profile.csv"
+        pd.DataFrame([summary]).to_csv(profile_path, index=False)
+        print(
+            "Inference profile | "
+            f"images={int(summary['n_images'])} "
+            f"tiles={int(summary['n_tiles'])} "
+            f"batch_forwards={int(summary['n_batch_forwards'])} | "
+            f"{summary['images_per_sec']:.3f} img/s "
+            f"{summary['tiles_per_sec']:.1f} tile/s | "
+            f"load={summary['load_pct']:.1f}% "
+            f"windows={summary['windows_pct']:.1f}% "
+            f"preprocess={summary['preprocess_pct']:.1f}% "
+            f"h2d={summary['h2d_pct']:.1f}% "
+            f"forward={summary['forward_pct']:.1f}% "
+            f"aggregate={summary['aggregate_pct']:.1f}%"
+        )
+        print(f"Wrote {profile_path}")
 
 
 if __name__ == "__main__":

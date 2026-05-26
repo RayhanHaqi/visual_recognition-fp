@@ -118,7 +118,8 @@ if [[ "${SKIP_INFER:-0}" != "1" ]]; then
     --run_name "$RUN_NAME" \
     --gpu "$GPU" \
     --shifts "$SHIFTS" \
-    --stride "$TILE"
+    --stride "$TILE" \
+    --batch_size "$BS"
 fi
 
 if [[ "${SKIP_SUBMIT:-0}" != "1" && "${SKIP_INFER:-0}" != "1" ]]; then
