@@ -26,21 +26,24 @@ CLASS_RGB = {
 
 # Max RGB distance for a pixel to vote for a class.
 CLASS_MAX_DIST = {
-    "adult_males": 100.0,
+    "adult_males": 110.0,
     "subadult_males": 85.0,
-    "adult_females": 60.0,
-    "juveniles": 100.0,
+    "adult_females": 72.0,
+    "juveniles": 150.0,
     "pups": 100.0,
 }
 
 # Minimum HSV saturation (OpenCV scale 0-255) per class.
 CLASS_MIN_SAT = {
-    "adult_males": 45,
+    "adult_males": 40,
     "subadult_males": 95,
-    "adult_females": 80,
-    "juveniles": 45,
+    "adult_females": 65,
+    "juveniles": 30,
     "pups": 45,
 }
+
+# Global dotted-image saturation gate before connected components.
+MASK_MIN_SAT = 35
 
 CLASS_TO_IDX = {name: i for i, name in enumerate(COUNT_COLUMNS)}
 
@@ -87,9 +90,15 @@ def _classify_colors(
     dists = np.linalg.norm(colors_f[:, None, :] - refs[None, :, :], axis=2)
 
     votes = np.zeros(len(COUNT_COLUMNS), dtype=np.int32)
-    for class_idx, name in enumerate(COUNT_COLUMNS):
-        ok = (dists[:, class_idx] <= CLASS_MAX_DIST[name]) & (sat >= CLASS_MIN_SAT[name])
-        votes[class_idx] = int(ok.sum())
+    for i in range(len(colors_f)):
+        eligible: list[tuple[float, int]] = []
+        for class_idx, name in enumerate(COUNT_COLUMNS):
+            if dists[i, class_idx] <= CLASS_MAX_DIST[name] and sat[i] >= CLASS_MIN_SAT[name]:
+                eligible.append((float(dists[i, class_idx]), class_idx))
+        if not eligible:
+            continue
+        _, winner = min(eligible, key=lambda item: item[0])
+        votes[winner] += 1
 
     total_votes = int(votes.sum())
     if total_votes < min_votes:
@@ -127,7 +136,7 @@ def _build_diff_mask(
     diff = np.abs(dotted_rgb.astype(np.int16) - train_rgb.astype(np.int16)).sum(axis=2)
     black = _is_black_region(train_rgb) | _is_black_region(dotted_rgb)
     dotted_hsv = cv2.cvtColor(dotted_rgb, cv2.COLOR_RGB2HSV)
-    saturated = dotted_hsv[:, :, 1] >= 40
+    saturated = dotted_hsv[:, :, 1] >= MASK_MIN_SAT
     mask = (diff >= min_diff) & (~black) & saturated
     mask_u8 = (mask.astype(np.uint8) * 255)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
@@ -137,7 +146,7 @@ def _build_diff_mask(
 def extract_dots_from_pair(
     train_rgb: np.ndarray,
     dotted_rgb: np.ndarray,
-    min_diff: int = 35,
+    min_diff: int = 30,
     min_blob_area: int = 2,
     max_blob_area: int = 120,
     min_votes: int = 1,

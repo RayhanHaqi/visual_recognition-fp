@@ -50,6 +50,16 @@ def test_extract_dots_finds_blue_and_red_small_dots():
     assert classes == sorted([CLASS_TO_IDX["adult_males"], CLASS_TO_IDX["juveniles"]])
 
 
+def test_extract_dots_finds_faint_blue_and_brown_dots():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    cv2.circle(dotted, (25, 25), 2, (100, 100, 255), -1)
+    cv2.circle(dotted, (75, 75), 2, (145, 45, 45), -1)
+    dots = extract_dots_from_pair(train, dotted)
+    classes = sorted(d.class_idx for d in dots)
+    assert classes == sorted([CLASS_TO_IDX["juveniles"], CLASS_TO_IDX["adult_females"]])
+
+
 def test_extract_dots_rejects_unsaturated_diff_blobs():
     train = np.full((100, 100, 3), 120, dtype=np.uint8)
     dotted = train.copy()
