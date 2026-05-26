@@ -48,8 +48,17 @@ datasets/
 ├── train.csv
 ├── sample_submission.csv
 ├── MismatchedTrainImages.txt
-└── coords-threeplusone-v0.4.csv   # optional
+└── dot_labels.csv                 # from import script (not hand-extracted)
 ```
+
+**Dot labels (recommended):** use the committed community coords, not `python -m data.dots`:
+
+```bash
+python scripts/import_dot_coords.py
+python scripts/analyze_dot_cache.py --data_path datasets --dot_cache datasets/dot_labels.csv --fail_on_gate
+```
+
+Source file in git: `data/coords-threeplusone-v0.4.csv` ([lopuhin/kaggle-lions-2017](https://github.com/lopuhin/kaggle-lions-2017)).
 
 ## Gotchas
 1. Remove mismatched images before training: `python setup.py --preprocess`
