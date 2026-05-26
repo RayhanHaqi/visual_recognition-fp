@@ -3,14 +3,18 @@
 
 import argparse
 import shutil
+import sys
 from pathlib import Path
 
 import cv2
 from tqdm import tqdm
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from data.submission_ops import scaled_test_subdir
 
-ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA = ROOT / "datasets"
 
 
