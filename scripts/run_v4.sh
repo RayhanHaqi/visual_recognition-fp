@@ -49,13 +49,19 @@ else
 fi
 
 echo "--- Inference (${RUN_NAME}) ---"
+PROFILE_ARGS=()
+if [[ "${PROFILE_INFERENCE:-0}" == "1" ]]; then
+  PROFILE_ARGS+=(--profile_inference)
+fi
+
 python inference.py "$CHECKPOINT" \
   --run_name "$RUN_NAME" \
   --gpu "$GPU" \
   --test_subdir "$TEST_SUBDIR" \
   --shifts "$SHIFTS" \
   --stride "$STRIDE" \
-  --batch_size "$BATCH_SIZE"
+  --batch_size "$BATCH_SIZE" \
+  "${PROFILE_ARGS[@]}"
 
 CSV="submission/${RUN_NAME}.csv"
 

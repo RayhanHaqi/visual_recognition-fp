@@ -53,6 +53,12 @@ def main():
         action="store_true",
         help="Collect per-stage inference timings and write log/{run_name}_infer_profile.csv",
     )
+    p.add_argument(
+        "--max_images",
+        type=int,
+        default=None,
+        help="Profile/debug: run model on at most N unique test images (still writes full sample rows)",
+    )
     args = p.parse_args()
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
@@ -94,6 +100,9 @@ def main():
         if key not in pred_cache:
             path = _resolve_test_path(path_by_id, img_id)
             if path is None:
+                pred_cache[key] = zero_counts.copy()
+                n_zero += 1
+            elif args.max_images is not None and n_model >= args.max_images:
                 pred_cache[key] = zero_counts.copy()
                 n_zero += 1
             else:
