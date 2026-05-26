@@ -24,13 +24,22 @@ CLASS_RGB = {
     "pups": np.array([0, 255, 0], dtype=np.float32),
 }
 
-# Max RGB distance for saturated pixels to count as a class vote.
+# Max RGB distance for a pixel to vote for a class.
 CLASS_MAX_DIST = {
-    "adult_males": 90.0,
-    "subadult_males": 90.0,
-    "adult_females": 65.0,
-    "juveniles": 90.0,
-    "pups": 90.0,
+    "adult_males": 100.0,
+    "subadult_males": 85.0,
+    "adult_females": 60.0,
+    "juveniles": 100.0,
+    "pups": 100.0,
+}
+
+# Minimum HSV saturation (OpenCV scale 0-255) per class.
+CLASS_MIN_SAT = {
+    "adult_males": 45,
+    "subadult_males": 95,
+    "adult_females": 80,
+    "juveniles": 45,
+    "pups": 45,
 }
 
 CLASS_TO_IDX = {name: i for i, name in enumerate(COUNT_COLUMNS)}
@@ -63,16 +72,25 @@ def _classify_dot_color(rgb: np.ndarray) -> int:
     return class_idx
 
 
+def _pixel_class_vote(pixel_rgb: np.ndarray, saturation: int) -> int | None:
+    class_idx, dist = _nearest_class(pixel_rgb)
+    class_name = COUNT_COLUMNS[class_idx]
+    if dist > CLASS_MAX_DIST[class_name]:
+        return None
+    if saturation < CLASS_MIN_SAT[class_name]:
+        return None
+    return class_idx
+
+
 def _classify_blob_pixels(
     dotted_rgb: np.ndarray,
     blob_mask: np.ndarray,
-    min_saturation: int = 100,
-    min_votes: int = 2,
-    min_vote_fraction: float = 0.55,
+    min_votes: int = 1,
+    min_vote_fraction: float = 0.5,
 ) -> int | None:
     """
-    Classify a diff blob using saturated dotted-image pixels inside the blob.
-    Returns None when the blob does not look like a competition annotation dot.
+    Classify a diff blob using dotted-image pixels inside the blob.
+    Primary colors use relaxed saturation; brown/magenta use stricter gates.
     """
     ys, xs = np.where(blob_mask)
     if len(xs) == 0:
@@ -80,15 +98,10 @@ def _classify_blob_pixels(
 
     colors = dotted_rgb[ys, xs].astype(np.uint8)
     hsv = cv2.cvtColor(colors.reshape(-1, 1, 3), cv2.COLOR_RGB2HSV).reshape(-1, 3)
-    sat_mask = hsv[:, 1] >= min_saturation
-    if int(sat_mask.sum()) < min_votes:
-        return None
-
     votes = np.zeros(len(COUNT_COLUMNS), dtype=np.int32)
-    for pixel in colors[sat_mask]:
-        class_idx, dist = _nearest_class(pixel)
-        class_name = COUNT_COLUMNS[class_idx]
-        if dist <= CLASS_MAX_DIST[class_name]:
+    for pixel, (_, s, _) in zip(colors, hsv):
+        class_idx = _pixel_class_vote(pixel, int(s))
+        if class_idx is not None:
             votes[class_idx] += 1
 
     total_votes = int(votes.sum())
@@ -104,11 +117,10 @@ def _classify_blob_pixels(
 def extract_dots_from_pair(
     train_rgb: np.ndarray,
     dotted_rgb: np.ndarray,
-    min_diff: int = 45,
+    min_diff: int = 35,
     min_blob_area: int = 2,
-    max_blob_area: int = 80,
-    min_saturation: int = 100,
-    min_votes: int = 2,
+    max_blob_area: int = 120,
+    min_votes: int = 1,
 ) -> list[Dot]:
     """Find colored annotation dots via TrainDotted - Train difference."""
     if train_rgb.shape != dotted_rgb.shape:
@@ -122,8 +134,6 @@ def extract_dots_from_pair(
     black = _is_black_region(train_rgb) | _is_black_region(dotted_rgb)
     mask = (diff >= min_diff) & (~black)
     mask_u8 = (mask.astype(np.uint8) * 255)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    mask_u8 = cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel)
 
     n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
     dots: list[Dot] = []
@@ -135,7 +145,6 @@ def extract_dots_from_pair(
         class_idx = _classify_blob_pixels(
             dotted_rgb,
             blob_mask,
-            min_saturation=min_saturation,
             min_votes=min_votes,
         )
         if class_idx is None:
