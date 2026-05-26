@@ -4,13 +4,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import pandas as pd
 
-from data.targets import COUNT_COLUMNS
-
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from data.targets import COUNT_COLUMNS
 
 # lopuhin/kaggle-lions-2017 (2nd place): tid,cls,row,col with cls 0..4
 LOPUHIN_CLS_TO_NAME = dict(enumerate(COUNT_COLUMNS))
