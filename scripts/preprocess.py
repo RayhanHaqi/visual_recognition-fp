@@ -8,6 +8,8 @@ from pathlib import Path
 import cv2
 from tqdm import tqdm
 
+from data.submission_ops import scaled_test_subdir
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA = ROOT / "datasets"
 
@@ -73,12 +75,19 @@ def main():
     p.add_argument("--dry_run", action="store_true")
     p.add_argument("--downscale_test", type=float, default=None,
                    help="e.g. 0.5 to halve each Test dimension")
+    p.add_argument(
+        "--out_subdir",
+        type=str,
+        default=None,
+        help="Output subdir under datasets/ (default: Test_scaled_<scale> when downscaling)",
+    )
     args = p.parse_args()
     data_dir = Path(args.data_path)
 
     remove_mismatched(data_dir, dry_run=args.dry_run)
     if args.downscale_test:
-        downscale_test(data_dir, args.downscale_test)
+        out_subdir = args.out_subdir or scaled_test_subdir(args.downscale_test)
+        downscale_test(data_dir, args.downscale_test, out_subdir=out_subdir)
 
 
 if __name__ == "__main__":

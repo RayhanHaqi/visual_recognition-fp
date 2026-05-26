@@ -6,31 +6,26 @@ from pathlib import Path
 
 import pandas as pd
 
-from data.targets import COUNT_COLUMNS, SUBMISSION_ID_COL, submission_id_column
+from data.submission_ops import blend_submissions, write_submission
+
+ROOT = Path(__file__).resolve().parent
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("csvs", nargs="+", help="Submission CSV paths to average")
     p.add_argument("--output", type=str, required=True)
-    p.add_argument("--sample", type=str, default="./datasets/sample_submission.csv")
     args = p.parse_args()
 
-    sample = pd.read_csv(args.sample)
-    id_col = submission_id_column(sample)
-    cols = COUNT_COLUMNS
+    paths = [Path(c) if Path(c).is_absolute() else ROOT / c for c in args.csvs]
+    frames = [pd.read_csv(path) for path in paths]
+    out = blend_submissions(frames)
 
-    dfs = [pd.read_csv(c) for c in args.csvs]
-    base = dfs[0].set_index(id_col)
-    for df in dfs[1:]:
-        base = base.add(df.set_index(id_col)[cols], fill_value=0)
-    base[cols] = base[cols] / len(dfs)
-    base[cols] = base[cols].clip(lower=0)
-    out = base.reset_index()
     out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out.to_csv(out_path, index=False)
-    print(f"Ensembled {len(dfs)} files -> {out_path}")
+    if not out_path.is_absolute():
+        out_path = ROOT / out_path
+    write_submission(out, out_path)
+    print(f"Ensembled {len(frames)} files -> {out_path}")
 
 
 if __name__ == "__main__":
