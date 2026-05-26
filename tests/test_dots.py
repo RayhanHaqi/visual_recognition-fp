@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from data.dots import (
     CLASS_TO_IDX,
+    _classify_colors,
     counts_in_crop,
     extract_dots_from_pair,
     load_dot_cache,
@@ -83,6 +84,19 @@ def test_extract_dots_rejects_unsaturated_reddish_terrain_patch():
     dotted[20:45, 20:45] = np.array([145, 105, 100], dtype=np.uint8)
     dots = extract_dots_from_pair(train, dotted)
     assert dots == []
+
+
+def test_classify_colors_hsv_fallback_keeps_faint_red_not_terrain():
+    assert _classify_colors(np.array([[255, 90, 90]], dtype=np.uint8)) == CLASS_TO_IDX[
+        "adult_males"
+    ]
+    assert _classify_colors(np.array([[145, 105, 100]], dtype=np.uint8)) is None
+
+
+def test_classify_colors_prefers_brown_female_over_red_hue():
+    assert _classify_colors(np.array([[165, 42, 42]], dtype=np.uint8)) == CLASS_TO_IDX[
+        "adult_females"
+    ]
 
 
 def test_extract_dots_keeps_saturated_brown_dot():

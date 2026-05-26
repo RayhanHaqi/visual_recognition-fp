@@ -46,13 +46,13 @@ CLASS_MIN_SAT = {
 MASK_MIN_SAT = 35
 
 # Adult male dots are red, but JPEG compression often moves them away from pure
-# [255, 0, 0]. Use hue as a fallback while keeping brown female dots separated
-# by nearest eligible RGB distance.
+# [255, 0, 0]. Use hue only as a fallback when RGB is still plausibly red;
+# terrain/shadow diffs can match red hue without being annotation dots.
 ADULT_MALE_HUE_MAX = 12
 ADULT_MALE_HUE_MIN_WRAP = 168
 ADULT_MALE_HSV_MIN_SAT = 50
 ADULT_MALE_HSV_MIN_VALUE = 80
-ADULT_MALE_HSV_SCORE = 105.0
+ADULT_MALE_HSV_MAX_RGB_DIST = 130.0
 
 CLASS_TO_IDX = {name: i for i, name in enumerate(COUNT_COLUMNS)}
 
@@ -100,16 +100,27 @@ def _classify_colors(
     refs = np.stack([CLASS_RGB[name] for name in COUNT_COLUMNS])
     dists = np.linalg.norm(colors_f[:, None, :] - refs[None, :, :], axis=2)
 
+    adult_idx = CLASS_TO_IDX["adult_males"]
     votes = np.zeros(len(COUNT_COLUMNS), dtype=np.int32)
     for i in range(len(colors_f)):
         eligible: list[tuple[float, int]] = []
+        adult_dist = float(dists[i, adult_idx])
         for class_idx, name in enumerate(COUNT_COLUMNS):
             if dists[i, class_idx] <= CLASS_MAX_DIST[name] and sat[i] >= CLASS_MIN_SAT[name]:
                 eligible.append((float(dists[i, class_idx]), class_idx))
+
+        rgb_red_ok = (
+            adult_dist <= CLASS_MAX_DIST["adult_males"]
+            and sat[i] >= CLASS_MIN_SAT["adult_males"]
+        )
         if (
-            hue[i] <= ADULT_MALE_HUE_MAX or hue[i] >= ADULT_MALE_HUE_MIN_WRAP
-        ) and sat[i] >= ADULT_MALE_HSV_MIN_SAT and val[i] >= ADULT_MALE_HSV_MIN_VALUE:
-            eligible.append((ADULT_MALE_HSV_SCORE, CLASS_TO_IDX["adult_males"]))
+            not rgb_red_ok
+            and (hue[i] <= ADULT_MALE_HUE_MAX or hue[i] >= ADULT_MALE_HUE_MIN_WRAP)
+            and sat[i] >= ADULT_MALE_HSV_MIN_SAT
+            and val[i] >= ADULT_MALE_HSV_MIN_VALUE
+            and adult_dist <= ADULT_MALE_HSV_MAX_RGB_DIST
+        ):
+            eligible.append((adult_dist, adult_idx))
         if not eligible:
             continue
         _, winner = min(eligible, key=lambda item: item[0])
