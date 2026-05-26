@@ -40,6 +40,31 @@ def test_extract_dots_from_synthetic_pair(tmp_path):
     assert classes == sorted([CLASS_TO_IDX["adult_males"], CLASS_TO_IDX["pups"]])
 
 
+def test_extract_dots_rejects_unsaturated_diff_blobs():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    dotted[20:45, 20:45] = np.array([140, 110, 90], dtype=np.uint8)
+    dots = extract_dots_from_pair(train, dotted)
+    assert dots == []
+
+
+def test_extract_dots_keeps_saturated_brown_dot():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    cv2.circle(dotted, (50, 50), 2, (165, 42, 42), -1)
+    dots = extract_dots_from_pair(train, dotted)
+    assert len(dots) == 1
+    assert dots[0].class_idx == CLASS_TO_IDX["adult_females"]
+
+
+def test_extract_dots_rejects_large_diff_blob():
+    train = np.full((100, 100, 3), 120, dtype=np.uint8)
+    dotted = train.copy()
+    cv2.rectangle(dotted, (10, 10), (70, 70), (255, 0, 0), -1)
+    dots = extract_dots_from_pair(train, dotted)
+    assert dots == []
+
+
 def test_counts_in_crop():
     from data.dots import Dot
 
