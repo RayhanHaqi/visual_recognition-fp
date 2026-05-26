@@ -72,37 +72,24 @@ def _classify_dot_color(rgb: np.ndarray) -> int:
     return class_idx
 
 
-def _pixel_class_vote(pixel_rgb: np.ndarray, saturation: int) -> int | None:
-    class_idx, dist = _nearest_class(pixel_rgb)
-    class_name = COUNT_COLUMNS[class_idx]
-    if dist > CLASS_MAX_DIST[class_name]:
-        return None
-    if saturation < CLASS_MIN_SAT[class_name]:
-        return None
-    return class_idx
-
-
-def _classify_blob_pixels(
-    dotted_rgb: np.ndarray,
-    blob_mask: np.ndarray,
+def _classify_colors(
+    colors: np.ndarray,
     min_votes: int = 1,
     min_vote_fraction: float = 0.5,
 ) -> int | None:
-    """
-    Classify a diff blob using dotted-image pixels inside the blob.
-    Primary colors use relaxed saturation; brown/magenta use stricter gates.
-    """
-    ys, xs = np.where(blob_mask)
-    if len(xs) == 0:
+    if len(colors) == 0:
         return None
 
-    colors = dotted_rgb[ys, xs].astype(np.uint8)
-    hsv = cv2.cvtColor(colors.reshape(-1, 1, 3), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+    colors_f = colors.astype(np.float32)
+    hsv = cv2.cvtColor(colors.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_RGB2HSV).reshape(-1, 3)
+    sat = hsv[:, 1].astype(np.int32)
+    refs = np.stack([CLASS_RGB[name] for name in COUNT_COLUMNS])
+    dists = np.linalg.norm(colors_f[:, None, :] - refs[None, :, :], axis=2)
+
     votes = np.zeros(len(COUNT_COLUMNS), dtype=np.int32)
-    for pixel, (_, s, _) in zip(colors, hsv):
-        class_idx = _pixel_class_vote(pixel, int(s))
-        if class_idx is not None:
-            votes[class_idx] += 1
+    for class_idx, name in enumerate(COUNT_COLUMNS):
+        ok = (dists[:, class_idx] <= CLASS_MAX_DIST[name]) & (sat >= CLASS_MIN_SAT[name])
+        votes[class_idx] = int(ok.sum())
 
     total_votes = int(votes.sum())
     if total_votes < min_votes:
@@ -112,6 +99,39 @@ def _classify_blob_pixels(
     if votes[winner] / total_votes < min_vote_fraction:
         return None
     return winner
+
+
+def _classify_blob_pixels(
+    dotted_rgb: np.ndarray,
+    labels: np.ndarray,
+    label: int,
+    stats: np.ndarray,
+    min_votes: int = 1,
+    min_vote_fraction: float = 0.5,
+) -> int | None:
+    x0 = int(stats[label, cv2.CC_STAT_LEFT])
+    y0 = int(stats[label, cv2.CC_STAT_TOP])
+    w = int(stats[label, cv2.CC_STAT_WIDTH])
+    h = int(stats[label, cv2.CC_STAT_HEIGHT])
+    roi_labels = labels[y0 : y0 + h, x0 : x0 + w]
+    roi_dotted = dotted_rgb[y0 : y0 + h, x0 : x0 + w]
+    colors = roi_dotted[roi_labels == label]
+    return _classify_colors(colors, min_votes=min_votes, min_vote_fraction=min_vote_fraction)
+
+
+def _build_diff_mask(
+    train_rgb: np.ndarray,
+    dotted_rgb: np.ndarray,
+    min_diff: int,
+) -> np.ndarray:
+    diff = np.abs(dotted_rgb.astype(np.int16) - train_rgb.astype(np.int16)).sum(axis=2)
+    black = _is_black_region(train_rgb) | _is_black_region(dotted_rgb)
+    dotted_hsv = cv2.cvtColor(dotted_rgb, cv2.COLOR_RGB2HSV)
+    saturated = dotted_hsv[:, :, 1] >= 40
+    mask = (diff >= min_diff) & (~black) & saturated
+    mask_u8 = (mask.astype(np.uint8) * 255)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    return cv2.morphologyEx(mask_u8, cv2.MORPH_OPEN, kernel)
 
 
 def extract_dots_from_pair(
@@ -130,10 +150,7 @@ def extract_dots_from_pair(
             interpolation=cv2.INTER_LINEAR,
         )
 
-    diff = np.abs(dotted_rgb.astype(np.int16) - train_rgb.astype(np.int16)).sum(axis=2)
-    black = _is_black_region(train_rgb) | _is_black_region(dotted_rgb)
-    mask = (diff >= min_diff) & (~black)
-    mask_u8 = (mask.astype(np.uint8) * 255)
+    mask_u8 = _build_diff_mask(train_rgb, dotted_rgb, min_diff)
 
     n_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask_u8, connectivity=8)
     dots: list[Dot] = []
@@ -141,10 +158,11 @@ def extract_dots_from_pair(
         area = int(stats[label, cv2.CC_STAT_AREA])
         if area < min_blob_area or area > max_blob_area:
             continue
-        blob_mask = labels == label
         class_idx = _classify_blob_pixels(
             dotted_rgb,
-            blob_mask,
+            labels,
+            label,
+            stats,
             min_votes=min_votes,
         )
         if class_idx is None:
