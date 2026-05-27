@@ -67,6 +67,20 @@ Source file in git: `data/coords-threeplusone-v0.4.csv` ([lopuhin/kaggle-lions-2
 4. Pup +20% post-process (`--pup_scale 1.2`) — only after baseline LB
 5. OOM on 5090 is unlikely at bs=16; fallback `--batch_size 8 --no_amp`
 
+## Post-v5 backbones (lab, after GPU idle)
+
+When `run_infer_v5.sh` / any `train.py` finishes, run EfficientNet-B3 then Inception-ResNet v2 (same `balanced_dots` as v5):
+
+```bash
+tmux new -s fp_p46
+cd FP && conda activate "$FP_CONDA_ENV"
+bash scripts/run_phases_4_and_6.sh
+```
+
+Single phase or resume: `PHASE=4 bash scripts/run_phases_4_and_6.sh` or `SKIP_PHASE4=1 bash scripts/run_phases_4_and_6.sh`. OOM: `BS=64` in `run_phase4.sh` / `run_phase6_inception.sh`, or `INFER_BS=128`.
+
+Targets to beat: **17.41** private (`balanced_dots_v5_pup120`). Full UNet density maps remain out of scope (see lopuhin2017).
+
 ## Post-Phase-3 workflow (lab)
 
 After `gaussian_dots_v6` train/infer:
