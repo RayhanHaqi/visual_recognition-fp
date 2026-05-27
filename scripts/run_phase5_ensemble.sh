@@ -3,6 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+echo "=================================================="
+echo "FP Phase 5 — ensemble (blend CSVs, no train/infer)"
+echo "=================================================="
+
 V5=${V5:-submission/balanced_dots_v5_pup120.csv}
 V4=${V4:-submission/fp_resnet50_e30_bs128_t299_v4_test05_pup120.csv}
 OUT_DIR=${OUT_DIR:-submission}

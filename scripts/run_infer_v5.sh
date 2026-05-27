@@ -5,6 +5,12 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source "$(dirname "$0")/conda_env.sh"
 
+PHASE_TITLE=${PHASE_TITLE:-inference}
+
+echo "=================================================="
+echo "FP ${PHASE_TITLE} — infer"
+echo "=================================================="
+
 CKPT=${CKPT:-checkpoints/fp_resnet50_e20_bs256_t299_balanced_dots_v5_best.pth}
 RUN_NAME=${RUN_NAME:-balanced_dots_v5}
 GPU=${GPU:-1}

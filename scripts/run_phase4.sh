@@ -8,6 +8,7 @@ source "$(dirname "$0")/conda_env.sh"
 BACKBONE=${BACKBONE:-tf_efficientnet_b3_ns}
 BS=${BS:-128}
 
+PHASE_TITLE="Phase 4 — ${BACKBONE} balanced_dots" \
 SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 \
 SKIP_INFER=1 SKIP_SUBMIT=1 SKIP_VALIDATE=1 \
 LABEL_MODE=balanced_dots \

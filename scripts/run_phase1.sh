@@ -56,8 +56,9 @@ source "$(dirname "$0")/conda_env.sh"
 # shellcheck disable=SC1091
 source "$(dirname "$0")/kaggle_env.sh"
 
+PHASE_TITLE=${PHASE_TITLE:-Phase 1}
 echo "=================================================="
-echo "FP Phase 1 — ${RUN_NAME} | GPU ${GPU} | env=${CONDA_DEFAULT_ENV:-system}"
+echo "FP ${PHASE_TITLE} — ${RUN_NAME} | label=${LABEL_MODE} | GPU ${GPU} | env=${CONDA_DEFAULT_ENV:-system}"
 echo "=================================================="
 
 if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then

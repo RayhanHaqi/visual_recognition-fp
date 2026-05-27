@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source "$(dirname "$0")/conda_env.sh"
 
+PHASE_TITLE="Phase 3 — gaussian_dots" \
 SKIP_INSTALL=1 SKIP_DOWNLOAD=1 SKIP_PREPROCESS=1 SKIP_SETUP=1 SKIP_TESTS=1 \
 SKIP_INFER=1 SKIP_SUBMIT=1 SKIP_VALIDATE=1 \
 LABEL_MODE=gaussian_dots \
