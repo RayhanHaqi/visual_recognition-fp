@@ -11,6 +11,14 @@ import torch
 from PIL import Image
 from torchvision import transforms as T
 
+try:
+    import cv2
+
+    _HAS_CV2 = True
+except ImportError:
+    cv2 = None  # type: ignore[assignment]
+    _HAS_CV2 = False
+
 from data.tiling import aggregate_tile_predictions, iter_tile_windows
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -94,8 +102,13 @@ def format_inference_profile(timings: InferenceTimings) -> dict[str, float]:
 
 
 def _preprocess_crop(crop: np.ndarray, tile_size: int) -> torch.Tensor:
-    pil = Image.fromarray(crop).resize((tile_size, tile_size), Image.BILINEAR)
-    return _NORMALIZE(_TO_TENSOR(pil))
+    if _HAS_CV2:
+        resized = cv2.resize(crop, (tile_size, tile_size), interpolation=cv2.INTER_LINEAR)
+        tensor = _NORMALIZE(_TO_TENSOR(resized))
+    else:
+        pil = Image.fromarray(crop).resize((tile_size, tile_size), Image.BILINEAR)
+        tensor = _NORMALIZE(_TO_TENSOR(pil))
+    return tensor
 
 
 def _sync_if_cuda(device: torch.device) -> None:

@@ -234,6 +234,32 @@ def counts_in_crop(dots: list[Dot], x0: int, y0: int, tile_size: int) -> np.ndar
     return counts
 
 
+def gaussian_counts_in_crop(
+    dots: list[Dot],
+    x0: int,
+    y0: int,
+    tile_size: int,
+    sigma: float = 25.0,
+) -> np.ndarray:
+    """Soft dot targets: Gaussian weight by distance from dot to crop (Phase 3)."""
+    counts = np.zeros(len(COUNT_COLUMNS), dtype=np.float32)
+    if not dots or sigma <= 0:
+        return counts
+    x1, y1 = x0 + tile_size, y0 + tile_size
+    inv_2sigma2 = 1.0 / (2.0 * sigma * sigma)
+    reach = 3.0 * sigma
+    for dot in dots:
+        if dot.x < x0 - reach or dot.x >= x1 + reach or dot.y < y0 - reach or dot.y >= y1 + reach:
+            continue
+        dx = max(x0 - dot.x, 0, dot.x - (x1 - 1))
+        dy = max(y0 - dot.y, 0, dot.y - (y1 - 1))
+        dist_sq = float(dx * dx + dy * dy)
+        weight = np.exp(-dist_sq * inv_2sigma2)
+        if weight > 1e-4:
+            counts[dot.class_idx] += weight
+    return counts
+
+
 def dots_to_rows(image_id: str, dots: list[Dot]) -> list[dict]:
     return [
         {"image_id": image_id, "x": d.x, "y": d.y, "class": COUNT_COLUMNS[d.class_idx]}

@@ -9,7 +9,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from data.dots import Dot, counts_in_crop
+from data.dots import Dot, counts_in_crop, gaussian_counts_in_crop
 from data.targets import (
     COUNT_COLUMNS,
     counts_for_image,
@@ -138,7 +138,7 @@ class SeaLionTileDataset(Dataset):
         ts = self.tile_size
 
         if w >= ts and h >= ts:
-            if self.label_mode == "balanced_dots":
+            if self.label_mode in {"balanced_dots", "gaussian_dots"}:
                 x0, y0 = self._balanced_crop_origin(img_id, w, h)
             else:
                 x0, y0 = self._random_crop_origin(w, h)
@@ -153,9 +153,12 @@ class SeaLionTileDataset(Dataset):
             crop = random_geom_augment(crop)
 
         tensor = self.transform(Image.fromarray(crop))
-        if self.label_mode in {"dots", "balanced_dots"}:
+        if self.label_mode in {"dots", "balanced_dots", "gaussian_dots"}:
             dots = self.dots_by_image.get(img_id, [])
-            target_np = counts_in_crop(dots, x0, y0, ts)
+            if self.label_mode == "gaussian_dots":
+                target_np = gaussian_counts_in_crop(dots, x0, y0, ts)
+            else:
+                target_np = counts_in_crop(dots, x0, y0, ts)
         else:
             full = counts_for_image(self.counts_df, img_id)
             target_np = (full * frac).astype(np.float32)

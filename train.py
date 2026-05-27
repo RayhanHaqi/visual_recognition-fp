@@ -92,7 +92,7 @@ def parse_args():
         "--label_mode",
         type=str,
         default="area",
-        choices=["area", "dots", "balanced_dots"],
+        choices=["area", "dots", "balanced_dots", "gaussian_dots"],
         help="Tile target: area-fraction of image counts or TrainDotted dot counts",
     )
     p.add_argument(
@@ -192,7 +192,7 @@ def main():
 
     dot_cache_path = None
     dots_by_image = None
-    if args.use_tiles and args.label_mode in {"dots", "balanced_dots"}:
+    if args.use_tiles and args.label_mode in {"dots", "balanced_dots", "gaussian_dots"}:
         dot_cache_path = Path(args.dot_cache)
         if not dot_cache_path.is_absolute():
             dot_cache_path = ROOT / dot_cache_path
@@ -205,7 +205,7 @@ def main():
         dots_by_image = load_dot_cache(dot_cache_path)
         n_dots = sum(len(v) for v in dots_by_image.values())
         print(f"Loaded dot cache: {len(dots_by_image)} images, {n_dots} dots")
-        if args.label_mode == "balanced_dots" and not args.skip_dot_cache_gate:
+        if args.label_mode in {"balanced_dots", "gaussian_dots"} and not args.skip_dot_cache_gate:
             analysis = analyze_dot_cache(data_dir, dot_cache_path)
             failures = dot_cache_gate_failures(
                 analysis,
