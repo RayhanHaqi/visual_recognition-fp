@@ -67,6 +67,17 @@ Source file in git: `data/coords-threeplusone-v0.4.csv` ([lopuhin/kaggle-lions-2
 4. Pup +20% post-process (`--pup_scale 1.2`) — only after baseline LB
 5. OOM on 5090 is unlikely at bs=16; fallback `--batch_size 8 --no_amp`
 
+## Post-Phase-3 workflow (lab)
+
+After `gaussian_dots_v6` train/infer:
+
+```bash
+bash scripts/post_phase3_workflow.sh   # or scripts/finish_phase3.sh
+bash scripts/run_phase5_blend_v6_v5.sh # only if v6 is competitive with v5 (17.41)
+```
+
+Report skeleton: `docs/REPORT_OUTLINE.md`. Faster infer: `AMP=1` in `scripts/run_infer_v5.sh` or `python inference.py ... --amp`.
+
 ## Reference solutions (related work)
 - https://github.com/lopuhin/kaggle-lions-2017 (UNet + regressor, 2nd place)
 - https://github.com/asanakoy/kaggle_sea_lions_counting (tile Inception + ensemble)

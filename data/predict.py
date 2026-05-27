@@ -121,16 +121,24 @@ def _forward_batch(
     tensors: list[torch.Tensor],
     device: torch.device,
     timings: InferenceTimings | None = None,
+    use_amp: bool = False,
 ) -> list[np.ndarray]:
     if timings is not None:
         t0 = time.perf_counter()
-    batch = torch.stack(tensors).to(device)
+    batch = torch.stack(tensors)
+    if device.type == "cuda":
+        batch = batch.pin_memory()
+    batch = batch.to(device, non_blocking=device.type == "cuda")
     if timings is not None:
         timings.h2d_sec += time.perf_counter() - t0
 
     if timings is not None:
         t1 = time.perf_counter()
-    out = torch.clamp(model(batch), min=0)
+    if use_amp and device.type == "cuda":
+        with torch.autocast(device_type="cuda"):
+            out = torch.clamp(model(batch), min=0)
+    else:
+        out = torch.clamp(model(batch), min=0)
     _sync_if_cuda(device)
     if timings is not None:
         timings.forward_sec += time.perf_counter() - t1
@@ -150,6 +158,7 @@ def _predict_from_windows(
     image_width: int,
     image_height: int,
     timings: InferenceTimings | None = None,
+    use_amp: bool = False,
 ) -> np.ndarray:
     preds: list[np.ndarray] = []
     batch_tensors: list[torch.Tensor] = []
@@ -163,11 +172,11 @@ def _predict_from_windows(
             timings.preprocess_sec += time.perf_counter() - t0
 
         if len(batch_tensors) >= batch_size:
-            preds.extend(_forward_batch(model, batch_tensors, device, timings))
+            preds.extend(_forward_batch(model, batch_tensors, device, timings, use_amp))
             batch_tensors = []
 
     if batch_tensors:
-        preds.extend(_forward_batch(model, batch_tensors, device, timings))
+        preds.extend(_forward_batch(model, batch_tensors, device, timings, use_amp))
 
     if timings is not None:
         t0 = time.perf_counter()
@@ -189,6 +198,7 @@ def predict_image_tiled(
     stride: int | None = None,
     batch_size: int = 8,
     timings: InferenceTimings | None = None,
+    use_amp: bool = False,
 ) -> np.ndarray:
     """
     Run tiled inference on one image. Returns 5-d non-negative counts (image level).
@@ -218,11 +228,18 @@ def predict_image_tiled(
     if not windows:
         if active is not None:
             t0 = time.perf_counter()
-        tensor = _preprocess_crop(img, tile_size).unsqueeze(0).to(device)
+        tensor = _preprocess_crop(img, tile_size)
+        if device.type == "cuda":
+            tensor = tensor.pin_memory()
+        tensor = tensor.unsqueeze(0).to(device, non_blocking=device.type == "cuda")
         if active is not None:
             active.preprocess_sec += time.perf_counter() - t0
             active.n_tiles = 1
-        result = torch.clamp(model(tensor), min=0).cpu().numpy()[0]
+        if use_amp and device.type == "cuda":
+            with torch.autocast(device_type="cuda"):
+                result = torch.clamp(model(tensor), min=0).cpu().numpy()[0]
+        else:
+            result = torch.clamp(model(tensor), min=0).cpu().numpy()[0]
         if timings is not None and per_image is not None:
             per_image.n_batch_forwards = 1
             per_image.add_image(
@@ -234,7 +251,7 @@ def predict_image_tiled(
 
     if shift_count == 1:
         result = _predict_from_windows(
-            model, img, windows, tile_size, device, batch_size, w, h, active
+            model, img, windows, tile_size, device, batch_size, w, h, active, use_amp
         )
         if timings is not None and per_image is not None:
             per_image.n_tiles = len(windows)
@@ -251,7 +268,7 @@ def predict_image_tiled(
 
     shift_totals = [
         _predict_from_windows(
-            model, img, by_shift[shift_idx], tile_size, device, batch_size, w, h, active
+            model, img, by_shift[shift_idx], tile_size, device, batch_size, w, h, active, use_amp
         )
         for shift_idx in sorted(by_shift)
     ]

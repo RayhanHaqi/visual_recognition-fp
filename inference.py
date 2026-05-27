@@ -95,6 +95,11 @@ def main():
         default=None,
         help="Profile/debug: run model on at most N unique test images (still writes full sample rows)",
     )
+    p.add_argument(
+        "--amp",
+        action="store_true",
+        help="CUDA autocast for model forward (may speed GPU; test with --profile_inference first)",
+    )
     args = p.parse_args()
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
@@ -150,6 +155,7 @@ def main():
                 model, path, tile_size, device,
                 shifts=args.shifts, stride=stride, batch_size=args.batch_size,
                 timings=profile,
+                use_amp=args.amp,
             )
             counts = pred_vector_to_submission_row(pred, source_columns=source_columns)
             if args.pup_scale != 1.0:

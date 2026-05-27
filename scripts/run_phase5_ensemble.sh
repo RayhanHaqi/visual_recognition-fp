@@ -23,4 +23,7 @@ done
 
 echo ""
 echo "Submit promising blends, e.g.:"
-echo "  bash scripts/submit.sh ${OUT_DIR}/ensemble_v50_v4.csv \"FP ensemble v5+v4 0.5\""
+echo "  bash scripts/submit.sh ${OUT_DIR}/ensemble_v50.5_v40.5.csv \"FP ensemble v5+v4 0.5\""
+echo ""
+echo "If v6 is competitive, use v6/v5 blends only:"
+echo "  bash scripts/run_phase5_blend_v6_v5.sh"

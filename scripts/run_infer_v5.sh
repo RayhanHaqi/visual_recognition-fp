@@ -17,6 +17,11 @@ GPU=${GPU:-1}
 TEST_SUBDIR=${TEST_SUBDIR:-Test_scaled_0.5}
 BATCH_SIZE=${BATCH_SIZE:-512}
 SHIFTS=${SHIFTS:-5}
+AMP=${AMP:-0}
+AMP_ARGS=()
+if [[ "$AMP" == "1" ]]; then
+  AMP_ARGS+=(--amp)
+fi
 
 python inference.py "$CKPT" \
   --run_name "$RUN_NAME" \
@@ -25,4 +30,5 @@ python inference.py "$CKPT" \
   --batch_size "$BATCH_SIZE" \
   --shifts "$SHIFTS" \
   --stride 299 \
+  "${AMP_ARGS[@]}" \
   2>&1 | tee "log/${RUN_NAME}_infer.log"
