@@ -18,6 +18,14 @@ def test_build_counter_forward():
     assert out.shape == (2, 5)
 
 
+def test_build_counter_hidden_head():
+    model = build_counter("resnet18", pretrained=False, head_hidden=32, dropout=0.5)
+    assert model.head_hidden == 32
+    assert len(model.head) == 5
+    out = model(torch.randn(1, 3, 64, 64))
+    assert out.shape == (1, 5)
+
+
 def test_rmse_loss():
     pred = torch.tensor([[1.0, 2, 3, 4, 5]])
     tgt = torch.tensor([[1.0, 2, 3, 4, 5]])
