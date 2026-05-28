@@ -67,6 +67,23 @@ Source file in git: `data/coords-threeplusone-v0.4.csv` ([lopuhin/kaggle-lions-2
 4. Pup +20% post-process (`--pup_scale 1.2`) — only after baseline LB
 5. OOM on 5090 is unlikely at bs=16; fallback `--batch_size 8 --no_amp`
 
+## Top-3 push (<13.05 private RMSE)
+
+Current best: `inception_v8_pup120` (~14.58). Quick sweeps (no retrain):
+
+```bash
+bash scripts/run_top3_quick_sweeps.sh
+```
+
+Train Asanakoy-style Inception v9/v10 (256 hidden head + scale aug):
+
+```bash
+bash scripts/run_top3_train_queue.sh
+# or one at a time: bash scripts/run_phase7_inception_v9.sh
+```
+
+Training knobs via env: `HEAD_HIDDEN=256 DROPOUT=0.5 SCALE_MIN=0.83 SCALE_MAX=1.25 TILES_PER_IMAGE=16`.
+
 ## Post-v5 backbones (lab, after GPU idle)
 
 When `run_infer_v5.sh` / any `train.py` finishes, run EfficientNet-B3 then Inception-ResNet v2 (same `balanced_dots` as v5):

@@ -113,6 +113,25 @@ def parse_args():
         action="store_true",
         help="Allow balanced_dots training without passing dot-cache diagnostics",
     )
+    p.add_argument(
+        "--head_hidden",
+        type=int,
+        default=0,
+        help="Hidden units before 5-d head (0 = single linear layer, Asanakoy uses 256)",
+    )
+    p.add_argument("--dropout", type=float, default=0.2)
+    p.add_argument(
+        "--scale_min",
+        type=float,
+        default=None,
+        help="Min random scale for source crop (with --scale_max); tile resized to tile_size",
+    )
+    p.add_argument(
+        "--scale_max",
+        type=float,
+        default=None,
+        help="Max random scale for source crop (e.g. 0.83 and 1.25)",
+    )
     return p.parse_args()
 
 
@@ -229,6 +248,8 @@ def main():
             train=True,
             label_mode=args.label_mode,
             dots_by_image=dots_by_image,
+            scale_min=args.scale_min,
+            scale_max=args.scale_max,
         )
     else:
         train_ds = SeaLionImageDataset(
@@ -245,7 +266,12 @@ def main():
         loader_kwargs["multiprocessing_context"] = "spawn"
     train_loader = DataLoader(train_ds, **loader_kwargs)
 
-    model = build_counter(args.backbone, pretrained=args.pretrained).to(device)
+    model = build_counter(
+        args.backbone,
+        pretrained=args.pretrained,
+        dropout=args.dropout,
+        head_hidden=args.head_hidden,
+    ).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
     steps = args.epochs * len(train_loader)
     scheduler = OneCycleLR(

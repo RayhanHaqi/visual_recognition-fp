@@ -49,6 +49,18 @@ if [[ "$LABEL_MODE" == "dots" || "$LABEL_MODE" == "balanced_dots" || "$LABEL_MOD
     TRAIN_EXTRA+=(--build_dot_cache)
   fi
 fi
+if [[ -n "${HEAD_HIDDEN:-}" ]]; then
+  TRAIN_EXTRA+=(--head_hidden "$HEAD_HIDDEN")
+fi
+if [[ -n "${DROPOUT:-}" ]]; then
+  TRAIN_EXTRA+=(--dropout "$DROPOUT")
+fi
+if [[ -n "${SCALE_MIN:-}" && -n "${SCALE_MAX:-}" ]]; then
+  TRAIN_EXTRA+=(--scale_min "$SCALE_MIN" --scale_max "$SCALE_MAX")
+fi
+if [[ -n "${TILES_PER_IMAGE:-}" ]]; then
+  TRAIN_EXTRA+=(--tiles_per_image "$TILES_PER_IMAGE")
+fi
 
 
 # shellcheck disable=SC1091

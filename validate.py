@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 from data.dataset import build_train_val_paths
 from data.predict import predict_image_tiled
 from data.targets import counts_for_image
-from model.build import build_counter
+from model.build import build_counter_from_checkpoint_args
 from utils.io import load_checkpoint
 from utils.metrics import rmse_numpy
 
@@ -42,7 +42,7 @@ def main():
     tile_size = args.tile_size or ckpt_args.get("tile_size", 299)
     stride = args.stride if args.stride is not None else tile_size
 
-    model = build_counter(backbone, pretrained=False).to(device)
+    model = build_counter_from_checkpoint_args(ckpt_args, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)
 
     _, val_paths, counts_df = build_train_val_paths(

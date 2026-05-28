@@ -25,7 +25,7 @@ from data.targets import (
     pred_vector_to_submission_row,
     submission_id_column,
 )
-from model.build import build_counter
+from model.build import build_counter_from_checkpoint_args
 from utils.io import load_checkpoint
 from utils.timefmt import format_duration
 
@@ -111,7 +111,7 @@ def main():
     stride = args.stride if args.stride is not None else tile_size
     source_columns = count_columns_from_checkpoint(ckpt_args)
 
-    model = build_counter(backbone, pretrained=False).to(device)
+    model = build_counter_from_checkpoint_args(ckpt_args, pretrained=False).to(device)
     load_checkpoint(ckpt_path, model, device)
     model.eval()
 
