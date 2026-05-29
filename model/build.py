@@ -25,6 +25,21 @@ def _make_head(feat_dim: int, dropout: float, head_hidden: int) -> nn.Sequential
     )
 
 
+def _infer_head_dim(backbone: nn.Module, fallback: int) -> int:
+    """Some timm models (notably VGG) expose conv features but return prelogits."""
+    was_training = backbone.training
+    backbone.eval()
+    device = next(backbone.parameters()).device
+    try:
+        with torch.inference_mode():
+            feats = backbone(torch.zeros(1, 3, 224, 224, device=device))
+        return int(feats.reshape(feats.shape[0], -1).shape[1])
+    except (RuntimeError, ValueError):
+        return fallback
+    finally:
+        backbone.train(was_training)
+
+
 class CountRegressor(nn.Module):
     def __init__(
         self,
@@ -43,7 +58,7 @@ class CountRegressor(nn.Module):
             num_classes=0,
             global_pool="avg",
         )
-        feat_dim = self.backbone.num_features
+        feat_dim = _infer_head_dim(self.backbone, int(self.backbone.num_features))
         self.head = _make_head(feat_dim, dropout, head_hidden)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
