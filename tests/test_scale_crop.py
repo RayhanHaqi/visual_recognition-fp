@@ -13,7 +13,7 @@ from data.dataset import SeaLionTileDataset
 from data.dots import Dot
 
 
-def test_scale_crop_larger_source_includes_extra_dot(mini_data_dir):
+def test_scale_crop_larger_source_includes_extra_dot(monkeypatch, mini_data_dir):
     counts_df = __import__("pandas").read_csv(mini_data_dir / "train.csv")
     train_paths = sorted((mini_data_dir / "Train").glob("*.jpg"))
     dots = {
@@ -30,9 +30,12 @@ def test_scale_crop_larger_source_includes_extra_dot(mini_data_dir):
         train=True,
         label_mode="balanced_dots",
         dots_by_image=dots,
-        scale_min=0.5,
-        scale_max=0.5,
+        balanced_positive_fraction=1.0,
+        scale_min=0.49,
+        scale_max=0.51,
     )
+    monkeypatch.setattr(np.random, "uniform", lambda *_: 0.5)
+
     tensor, target, _ = ds[0]
     assert tensor.shape == (3, 128, 128)
     assert target[0].item() >= 1.0
