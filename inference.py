@@ -26,7 +26,6 @@ from data.targets import (
     submission_id_column,
 )
 from model.build import build_counter_from_checkpoint_args
-from utils.io import load_checkpoint
 from utils.timefmt import format_duration
 
 _INFER_BAR_FORMAT = (
@@ -44,12 +43,14 @@ def _plan_model_runs(
     path_by_id: dict,
     zero_counts: dict[str, float],
     max_images: int | None,
+    allow_missing: bool = False,
 ) -> tuple[list[tuple[str, Path]], dict[str | int, dict[str, float]], int]:
     """Unique test ids that need a model forward pass vs zero-fill cache entries."""
     predict_list: list[tuple[str, Path]] = []
     pred_cache: dict[str | int, dict[str, float]] = {}
     n_zero = 0
     seen: set[str | int] = set()
+    missing_ids: list[str] = []
 
     for img_id in sample_ids:
         key = normalize_test_id(img_id)
@@ -58,13 +59,25 @@ def _plan_model_runs(
         seen.add(key)
         path = _resolve_test_path(path_by_id, img_id)
         if path is None:
-            pred_cache[key] = zero_counts.copy()
-            n_zero += 1
+            if allow_missing:
+                pred_cache[key] = zero_counts.copy()
+                n_zero += 1
+            else:
+                missing_ids.append(str(img_id))
         elif max_images is not None and len(predict_list) >= max_images:
             pred_cache[key] = zero_counts.copy()
             n_zero += 1
         else:
             predict_list.append((key, path))
+
+    if missing_ids:
+        preview = ", ".join(missing_ids[:10])
+        if len(missing_ids) > 10:
+            preview += ", ..."
+        raise FileNotFoundError(
+            f"{len(missing_ids)} sample_submission ids were not found in the test directory: "
+            f"{preview}"
+        )
 
     return predict_list, pred_cache, n_zero
 
@@ -96,6 +109,11 @@ def main():
         help="Profile/debug: run model on at most N unique test images (still writes full sample rows)",
     )
     p.add_argument(
+        "--allow_missing_test_images",
+        action="store_true",
+        help="Debug only: zero-fill sample ids missing from --test_subdir instead of failing",
+    )
+    p.add_argument(
         "--amp",
         action="store_true",
         help="CUDA autocast for model forward (may speed GPU; test with --profile_inference first)",
@@ -104,16 +122,20 @@ def main():
 
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     ckpt_path = Path(args.checkpoint)
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    if not ckpt_path.is_file():
+        raise FileNotFoundError(f"Missing checkpoint: {ckpt_path}")
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     ckpt_args = ckpt.get("args", {})
     backbone = ckpt_args.get("backbone", "resnet50")
     tile_size = args.tile_size or ckpt_args.get("tile_size", 299)
     stride = args.stride if args.stride is not None else tile_size
     source_columns = count_columns_from_checkpoint(ckpt_args)
 
-    model = build_counter_from_checkpoint_args(ckpt_args, pretrained=False).to(device)
-    load_checkpoint(ckpt_path, model, device)
+    model = build_counter_from_checkpoint_args(ckpt_args, pretrained=False)
+    model.load_state_dict(ckpt["model_state_dict"])
+    model.to(device)
     model.eval()
+    print(f"Loaded {ckpt_path.name} | backbone={backbone} tile={tile_size} stride={stride}")
 
     data_dir = Path(args.data_path)
     sample_path = data_dir / "sample_submission.csv"
@@ -132,7 +154,7 @@ def main():
     zero_counts = {col: 0.0 for col in COUNT_COLUMNS}
     sample_ids = sample[id_col].astype(str).tolist()
     predict_list, pred_cache, n_zero = _plan_model_runs(
-        sample_ids, path_by_id, zero_counts, args.max_images
+        sample_ids, path_by_id, zero_counts, args.max_images, args.allow_missing_test_images
     )
     profile = InferenceTimings() if args.profile_inference else None
 

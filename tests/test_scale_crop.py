@@ -50,3 +50,22 @@ def test_scale_crop_disabled_uses_tile_size_only(mini_data_dir):
         label_mode="area",
     )
     assert ds._sample_source_size(500, 500) == 64
+
+
+def test_scale_crop_allows_zoom_in_source_smaller_than_tile(monkeypatch, mini_data_dir):
+    counts_df = __import__("pandas").read_csv(mini_data_dir / "train.csv")
+    train_paths = sorted((mini_data_dir / "Train").glob("*.jpg"))
+    ds = SeaLionTileDataset(
+        train_paths[:1],
+        counts_df,
+        tile_size=100,
+        tiles_per_image=1,
+        train=True,
+        label_mode="balanced_dots",
+        dots_by_image={train_paths[0].stem: [Dot(50, 50, 0)]},
+        scale_min=0.8,
+        scale_max=1.25,
+    )
+    monkeypatch.setattr(np.random, "uniform", lambda *_: 1.25)
+
+    assert ds._sample_source_size(500, 500) == 80

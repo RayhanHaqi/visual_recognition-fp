@@ -106,8 +106,7 @@ class SeaLionTileDataset(Dataset):
             return ts
         scale = float(np.random.uniform(self.scale_min, self.scale_max))
         sz = int(round(ts / scale))
-        sz = max(8, min(sz, width, height))
-        return max(ts, sz) if width >= ts and height >= ts else min(width, height)
+        return max(8, min(sz, width, height))
 
     def _random_crop_origin(self, width: int, height: int, crop_size: int) -> tuple[int, int]:
         if width < crop_size or height < crop_size:

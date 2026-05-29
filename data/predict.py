@@ -234,7 +234,6 @@ def predict_image_tiled(
         tensor = tensor.unsqueeze(0).to(device, non_blocking=device.type == "cuda")
         if active is not None:
             active.preprocess_sec += time.perf_counter() - t0
-            active.n_tiles = 1
         if use_amp and device.type == "cuda":
             with torch.autocast(device_type="cuda"):
                 result = torch.clamp(model(tensor), min=0).cpu().numpy()[0]
@@ -243,7 +242,7 @@ def predict_image_tiled(
         if timings is not None and per_image is not None:
             per_image.n_batch_forwards = 1
             per_image.add_image(
-                n_tiles=per_image.n_tiles,
+                n_tiles=1,
                 elapsed_sec=time.perf_counter() - image_t0,
             )
             timings.merge(per_image)
@@ -254,9 +253,8 @@ def predict_image_tiled(
             model, img, windows, tile_size, device, batch_size, w, h, active, use_amp
         )
         if timings is not None and per_image is not None:
-            per_image.n_tiles = len(windows)
             per_image.add_image(
-                n_tiles=per_image.n_tiles,
+                n_tiles=len(windows),
                 elapsed_sec=time.perf_counter() - image_t0,
             )
             timings.merge(per_image)
@@ -278,9 +276,8 @@ def predict_image_tiled(
     result = np.mean(np.stack(shift_totals, axis=0), axis=0).astype(np.float32)
     if active is not None:
         active.aggregate_sec += time.perf_counter() - t0
-        active.n_tiles = len(windows)
         active.add_image(
-            n_tiles=active.n_tiles,
+            n_tiles=len(windows),
             elapsed_sec=time.perf_counter() - image_t0,
         )
         timings.merge(per_image)

@@ -14,18 +14,32 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source "$(dirname "$0")/conda_env.sh"
+# shellcheck disable=SC1091
+source "$(dirname "$0")/lib/fp_paths.sh"
 
 GPU=${GPU:-1}
 BEST_RMSE=${BEST_RMSE:-17.41298}
 BEST_LABEL=${BEST_LABEL:-balanced_dots_v5_pup120}
 INFER_BS=${INFER_BS:-256}
+TEST_SUBDIR=${TEST_SUBDIR:-Test_scaled_0.5}
 WAIT_FOR_GPU=${WAIT_FOR_GPU:-1}
 SKIP_PHASE4=${SKIP_PHASE4:-0}
 SKIP_PHASE6=${SKIP_PHASE6:-0}
 PHASE=${PHASE:-all}
 
-CKPT4=checkpoints/fp_tf_efficientnet_b3_ns_e20_bs128_t299_effnet_b3_balanced_v7_best.pth
-CKPT6=checkpoints/fp_inception_resnet_v2_e20_bs128_t299_inception_v8_best.pth
+P4_BACKBONE=${P4_BACKBONE:-tf_efficientnet_b3_ns}
+P4_EPOCHS=${P4_EPOCHS:-20}
+P4_BS=${P4_BS:-${BS:-128}}
+P4_TILE=${P4_TILE:-299}
+P4_SUFFIX=${P4_SUFFIX:-effnet_b3_balanced_v7}
+CKPT4=$(fp_checkpoint_path "$P4_BACKBONE" "$P4_EPOCHS" "$P4_BS" "$P4_TILE" "$P4_SUFFIX")
+
+P6_BACKBONE=${P6_BACKBONE:-inception_resnet_v2}
+P6_EPOCHS=${P6_EPOCHS:-20}
+P6_BS=${P6_BS:-${BS:-128}}
+P6_TILE=${P6_TILE:-299}
+P6_SUFFIX=${P6_SUFFIX:-inception_v8}
+CKPT6=$(fp_checkpoint_path "$P6_BACKBONE" "$P6_EPOCHS" "$P6_BS" "$P6_TILE" "$P6_SUFFIX")
 RUN4=effnet_b3_v7
 RUN6=inception_v8
 
@@ -41,7 +55,8 @@ wait_for_gpu() {
 run_phase4() {
   echo ""
   echo "======== Phase 4: EfficientNet-B3 + balanced_dots ========"
-  bash scripts/run_phase4.sh
+  BACKBONE="$P4_BACKBONE" EPOCHS="$P4_EPOCHS" BS="$P4_BS" TILE="$P4_TILE" \
+    SUFFIX="$P4_SUFFIX" GPU="$GPU" RUN_NAME= bash scripts/run_phase4.sh
 
   if [[ ! -f "$CKPT4" ]]; then
     echo "ERROR: missing $CKPT4 after training"
@@ -50,7 +65,7 @@ run_phase4() {
 
   PHASE_TITLE="Phase 4 infer" \
     CKPT="$CKPT4" RUN_NAME="$RUN4" GPU="$GPU" \
-    BATCH_SIZE="$INFER_BS" AMP=1 \
+    TEST_SUBDIR="$TEST_SUBDIR" BATCH_SIZE="$INFER_BS" AMP=1 \
     bash scripts/run_infer_v5.sh
 
   RUN_NAME="$RUN4" SUBMIT_MSG="FP effnet b3 v7 pup120" \
@@ -61,7 +76,8 @@ run_phase4() {
 run_phase6() {
   echo ""
   echo "======== Phase 6: Inception-ResNet v2 + balanced_dots ========"
-  bash scripts/run_phase6_inception.sh
+  BACKBONE="$P6_BACKBONE" EPOCHS="$P6_EPOCHS" BS="$P6_BS" TILE="$P6_TILE" \
+    SUFFIX="$P6_SUFFIX" GPU="$GPU" RUN_NAME= bash scripts/run_phase6_inception.sh
 
   if [[ ! -f "$CKPT6" ]]; then
     echo "ERROR: missing $CKPT6 after training"
@@ -70,7 +86,7 @@ run_phase6() {
 
   PHASE_TITLE="Phase 6 infer" \
     CKPT="$CKPT6" RUN_NAME="$RUN6" GPU="$GPU" \
-    BATCH_SIZE="$INFER_BS" AMP=1 \
+    TEST_SUBDIR="$TEST_SUBDIR" BATCH_SIZE="$INFER_BS" AMP=1 \
     bash scripts/run_infer_v5.sh
 
   RUN_NAME="$RUN6" SUBMIT_MSG="FP inception v8 pup120" \
@@ -81,6 +97,7 @@ run_phase6() {
 echo "=================================================="
 echo "FP Phases 4 + 6 — backbones after v5 (beat RMSE ${BEST_RMSE})"
 echo "=================================================="
+fp_prepare_test_subdir "$TEST_SUBDIR"
 
 if [[ "$WAIT_FOR_GPU" == "1" && "${SKIP_WAIT:-0}" != "1" ]]; then
   wait_for_gpu

@@ -9,6 +9,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source "$(dirname "$0")/conda_env.sh"
+# shellcheck disable=SC1091
+source "$(dirname "$0")/kaggle_env.sh"
 
 RUN_NAME=${RUN_NAME:?Set RUN_NAME (submission base name, e.g. effnet_b3_v7)}
 BEST_RMSE=${BEST_RMSE:-17.41298}
@@ -23,6 +25,8 @@ if [[ ! -f "$RAW" ]]; then
   echo "  CKPT=checkpoints/..._best.pth RUN_NAME=${RUN_NAME} AMP=1 bash scripts/run_infer_v5.sh"
   exit 1
 fi
+
+mkdir -p submission
 
 echo "=================================================="
 echo "FP finish — ${RUN_NAME} (pup scale + submit)"

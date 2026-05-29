@@ -35,6 +35,9 @@ report/*
 notebooks/*
 !notebooks/.gitkeep
 
+# Vendored competition solutions (Phase 9 Lopuhin clone)
+third_party/
+
 __pycache__/
 *.pyc
 *.pyo

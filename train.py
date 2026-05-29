@@ -194,6 +194,13 @@ def train_one_epoch(model, loader, optimizer, scheduler, device, scaler, use_amp
 
 def main():
     args = parse_args()
+    if args.scale_min is not None or args.scale_max is not None:
+        if args.scale_min is None or args.scale_max is None:
+            raise ValueError("Scale augmentation requires both --scale_min and --scale_max")
+        if args.scale_max <= args.scale_min:
+            raise ValueError(
+                f"--scale_max must be > --scale_min (got {args.scale_min} .. {args.scale_max})"
+            )
     set_seed(args.seed)
     data_dir = Path(args.data_path)
 

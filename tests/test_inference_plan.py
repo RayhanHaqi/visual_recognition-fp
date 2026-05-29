@@ -8,6 +8,17 @@ from data.targets import COUNT_COLUMNS, normalize_test_id
 from inference import _plan_model_runs
 
 
+def test_plan_model_runs_fails_when_sample_id_has_no_test_image():
+    zero = {c: 0.0 for c in COUNT_COLUMNS}
+
+    try:
+        _plan_model_runs(["999.jpg"], {}, zero, max_images=None)
+    except FileNotFoundError as exc:
+        assert "999.jpg" in str(exc)
+    else:
+        raise AssertionError("missing sample ids must not be silently zero-filled")
+
+
 def test_plan_model_runs_respects_max_images(mini_data_dir):
     from data.targets import list_test_images, submission_id_column
     import pandas as pd

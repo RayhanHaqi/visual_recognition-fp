@@ -67,8 +67,11 @@ fi
 source "$(dirname "$0")/conda_env.sh"
 # shellcheck disable=SC1091
 source "$(dirname "$0")/kaggle_env.sh"
+# shellcheck disable=SC1091
+source "$(dirname "$0")/lib/fp_paths.sh"
 
 PHASE_TITLE=${PHASE_TITLE:-Phase 1}
+TEST_SUBDIR=${TEST_SUBDIR:-Test_scaled_0.5}
 echo "=================================================="
 echo "FP ${PHASE_TITLE} — ${RUN_NAME} | label=${LABEL_MODE} | GPU ${GPU} | env=${CONDA_DEFAULT_ENV:-system}"
 echo "=================================================="
@@ -87,6 +90,10 @@ fi
 
 if [[ "${SKIP_SETUP:-0}" != "1" ]]; then
   python setup.py
+fi
+
+if [[ "${SKIP_INFER:-0}" != "1" ]]; then
+  fp_prepare_test_subdir "$TEST_SUBDIR"
 fi
 
 if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
@@ -117,22 +124,42 @@ if [[ "${SKIP_TRAIN:-0}" != "1" ]]; then
     "${TRAIN_EXTRA[@]}"
 fi
 
+CKPT_PATH="checkpoints/${RUN_NAME}_best.pth"
+
 if [[ "${SKIP_VALIDATE:-0}" != "1" ]]; then
+  if [[ ! -f "$CKPT_PATH" ]]; then
+    echo "ERROR: missing $CKPT_PATH (train first or set SKIP_TRAIN=0)"
+    exit 1
+  fi
+  STRIDE_ARGS=()
+  if [[ -n "${STRIDE:-}" ]]; then
+    STRIDE_ARGS+=(--stride "$STRIDE")
+  fi
   echo "--- Validate (tiled sum RMSE) ---"
-  python validate.py "checkpoints/${RUN_NAME}_best.pth" \
+  python validate.py "$CKPT_PATH" \
     --gpu "$GPU" \
     --shifts "$SHIFTS" \
-    --stride "$TILE"
+    "${STRIDE_ARGS[@]}"
 fi
 
 if [[ "${SKIP_INFER:-0}" != "1" ]]; then
-  echo "--- Inference ---"
-  python inference.py "checkpoints/${RUN_NAME}_best.pth" \
+  if [[ ! -f "$CKPT_PATH" ]]; then
+    echo "ERROR: missing $CKPT_PATH (train first or set SKIP_TRAIN=0)"
+    exit 1
+  fi
+  fp_require_test_subdir "$TEST_SUBDIR"
+  STRIDE_ARGS=()
+  if [[ -n "${STRIDE:-}" ]]; then
+    STRIDE_ARGS+=(--stride "$STRIDE")
+  fi
+  echo "--- Inference (${TEST_SUBDIR}) ---"
+  python inference.py "$CKPT_PATH" \
     --run_name "$RUN_NAME" \
     --gpu "$GPU" \
+    --test_subdir "$TEST_SUBDIR" \
     --shifts "$SHIFTS" \
-    --stride "$TILE" \
-    --batch_size "$BS"
+    --batch_size "$BS" \
+    "${STRIDE_ARGS[@]}"
 fi
 
 if [[ "${SKIP_SUBMIT:-0}" != "1" && "${SKIP_INFER:-0}" != "1" ]]; then

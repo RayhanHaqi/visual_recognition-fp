@@ -24,13 +24,13 @@
 }
 
 % --- Document Identity ---
-\title{\textbf{Visual Recognition using Deep Learning}\\ \large Final Project (Preliminary Report):\\ NOAA Steller Sea Lion Population Count}
+\title{\textbf{Visual Recognition using Deep Learning}\\ \large Final Project Report:\\ NOAA Steller Sea Lion Population Count}
 \author{
     Muhammad Rayhan Athaillah \begin{CJK*}{UTF8}{bsmi}(賴瑞涵)\end{CJK*}\\
     \small Student ID: 313540001\\
     \small National Yang Ming Chiao Tung University
 }
-\date{May 25, 2026}
+\date{May 29, 2026}
 
 \begin{document}
 
@@ -43,20 +43,23 @@
 \noindent \textbf{Kaggle Competition:} \href{https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count}{NOAA Fisheries Steller Sea Lion Population Count}
 
 \vspace{0.3cm}
-\noindent \textit{This document is a \textbf{preliminary report} prepared before the final submission deadline (2026/05/31 23:59). v2 Kaggle scores and v3 training status are included; figures and v3 leaderboard results will be updated in the final version.}
+\noindent \textit{Final project report for E3 upload (deadline 2026/05/31 23:59; presentation 2026/06/02, Topic~3). Kaggle scores are from late course submissions after the original 2017 competition close. Best private RMSE: \textbf{14.58} (\texttt{inception\_v8\_pup120}). Insert \texttt{figure/kaggle\_snapshot.png} before the final PDF build.}
 
 % ==========================================
 % 1. INTRODUCTION
 % ==========================================
 \section{Introduction}
 
-This report describes our ongoing work on the \textbf{NOAA Fisheries Steller Sea Lion Population Count} Kaggle competition (Final Project, Topic~3) for the Visual Recognition using Deep Learning course (2026 Spring). The task is to predict five non-negative integer counts per aerial photograph:
+This report documents our \textbf{NOAA Fisheries Steller Sea Lion Population Count} solution (Final Project, Topic~3), Visual Recognition using Deep Learning (2026 Spring). The task is to predict five non-negative integer counts per aerial photograph:
 
 \begin{itemize}
     \item \texttt{adult\_males}, \texttt{subadult\_males}, \texttt{adult\_females}, \texttt{juveniles}, \texttt{pups}
 \end{itemize}
 
-Performance is evaluated by \textbf{Root Mean Squared Error (RMSE)} on a hidden test set; \textbf{lower is better}. The competition historically involved 386 teams, with golden-medal RMSE roughly in the range 15.88--10.86 (best public leaderboard scores).
+Performance is evaluated by \textbf{Root Mean Squared Error (RMSE)} on a hidden test set; \textbf{lower is better}. The competition had 386 teams; the historical \textbf{golden medal} band on the public leaderboard is RMSE $\approx$ 15.88--10.86 (best $\approx$ 10.86).
+
+\subsection{Course Grading Context (Topic 3, Detection)}
+For our presentation slot (2026/06/02), course grading allocates 50\% to model performance: golden medal $\Rightarrow$ 25 points, top-3 $\Rightarrow$ 40 points, and within \textbf{3\%} of the best score on the leaderboard $\Rightarrow$ 50 points (detection competitions use the 3\% band). Presentation (30\%), report \& code (10\%), and peer review (10\%) follow the rubric in \texttt{(114-2)FinalProject.pdf} and \texttt{Tips\_FinalProj\_Presentation.pdf}: required sections are Introduction, Related Work, Method, Experimental Results (with Kaggle rank screenshot), Conclusion, References, code link, and team contribution table.
 
 \subsection{Task and Dataset}
 The dataset contains high-resolution aerial images of Steller sea lion colonies:
@@ -69,13 +72,25 @@ The dataset contains high-resolution aerial images of Steller sea lion colonies:
 
 Each training image is paired with five class counts in \texttt{train.csv}. Unlike bounding-box detection, the model must regress population counts directly from pixels.
 
+\subsection{Motivation and Difficulties}
+\textbf{Importance.} Automated counts from aerial surveys support fisheries monitoring of the endangered Steller sea lion; manual dot counting on megapixel mosaics is slow and error-prone.
+
+\textbf{Challenges we address.}
+\begin{itemize}
+    \item \textbf{Extreme image size:} a single frame can exceed 4K resolution; naive whole-image resize destroys small animals.
+    \item \textbf{Weak default supervision:} scaling image-level counts to random crops (area fraction) does not use dot locations in \texttt{TrainDotted/}.
+    \item \textbf{Train/test distribution shift:} test-set images are downscaled in strong solutions; inference must tile consistently with training.
+    \item \textbf{Metric mismatch:} tile-level training RMSE can look excellent ($\sim$0.2) while image-level validation and Kaggle RMSE remain high ($\sim$30+) unless aggregation and labels are aligned.
+\end{itemize}
+
 \subsection{Technical Constraints}
 Following course and competition rules:
 \begin{itemize}
     \item \textbf{No external data} beyond the official Kaggle release.
     \item \textbf{ImageNet pretraining} is permitted for the backbone.
     \item Submission includes \textbf{source code (.py) and an English PDF report}; checkpoints and datasets are \textbf{not} submitted.
-    \item Presentation (2026/06/02) must include a Kaggle rank screenshot, team contribution table, and code link.
+    \item Presentation (2026/06/02, 10~min talk + 2~min Q\&A) must include a \textbf{Kaggle rank screenshot}, \textbf{team contribution table}, and \textbf{code link} (course requirements).
+    \item Report and code are uploaded to E3 by the team leader; slides may be revised after the report deadline, but the report may not.
 \end{itemize}
 
 % ==========================================
@@ -97,7 +112,7 @@ These works share several principles adopted in our implementation:
 \begin{enumerate}
     \item \textbf{Never resize the full image to a tiny square} --- use tiling or downscaling instead.
     \item \textbf{Train on tiles}, predict on overlapping or shifted tile grids at test time.
-    \item \textbf{Downscale test images} for faster inference and better generalization (planned Phase~2).
+    \item \textbf{Downscale test images} for faster inference and better generalization (we use $0.5\times$ test scaling in production runs).
     \item \textbf{Multi-shift TTA} at inference improves RMSE by averaging predictions from staggered tile grids.
 \end{enumerate}
 
@@ -107,7 +122,7 @@ These works share several principles adopted in our implementation:
 \section{Method}
 
 \subsection{Overview}
-Our Phase~1 baseline uses a \textbf{ResNet-50} backbone (timm, ImageNet pretrained) with a linear 5-dimensional output head. The model predicts non-negative counts per input tile; image-level prediction is obtained by tiled inference and aggregation.
+We use a \textbf{tile regression} pipeline: a timm CNN backbone (ResNet-50 for early baselines; \textbf{Inception-ResNet v2} for the best run) with a 5-dimensional count head, trained on $299\times299$ crops and evaluated by tiled inference with multi-shift TTA. The head is either a single linear layer or an Asanakoy-style MLP (\texttt{Dropout} $\rightarrow$ 256 $\rightarrow$ \texttt{ReLU} $\rightarrow$ \texttt{Dropout} $\rightarrow$ 5) when \texttt{--head\_hidden 256} is set.
 
 \subsection{Data Preprocessing}
 \begin{enumerate}
@@ -129,10 +144,31 @@ We use \texttt{SeaLionTileDataset} with \texttt{--use\_tiles}:
 
 This teaches the network to predict \emph{how many sea lions appear in a local patch}, consistent with top competition solutions.
 
-\subsection{Training v3: Dot-Count Labels (\texttt{label\_mode=dots})}
-Area-fraction targets (v1/v2) scale image-level counts by crop size but do not use the pixel-level dot annotations in \texttt{TrainDotted/}. For v3 we extract colored dots by differencing each \texttt{TrainDotted} image against its \texttt{Train} pair, classify dot color into the five count classes, and cache positions in \texttt{datasets/dot\_labels.csv} ($\sim$18 minutes, 891 images, $\sim$2.26M dots).
+\subsection{Dot Labels and Balanced Tile Training (Phases 1--3)}
+Area-fraction targets (v1/v2) scale image-level counts by crop size but do not use pixel-level dot locations. Top solutions supervise tiles with dot counts inside each crop.
 
-During training, each random $299\times299$ crop receives a 5-D target equal to the number of cached dots whose $(x,y)$ fall inside the crop. Validation and inference still aggregate tile predictions to image-level counts with the same non-overlapping validation grid and multi-shift TTA as v2. This aligns supervision more closely with the competition's dot-annotation protocol.
+\textbf{Dot cache (Phase 1).} Hand-tuned HSV extraction from \texttt{Train}/\texttt{TrainDotted} pairs was unstable. We instead import the community coordinate file \texttt{coords-threeplusone-v0.4.csv} from Lopuhin's 2nd-place repository \cite{lopuhin2017} via \texttt{scripts/import\_dot\_coords.py}, producing \texttt{datasets/dot\_labels.csv} ($\sim$81k dots, 891 images). A class-level gate (\texttt{analyze\_dot\_cache.py --fail\_on\_gate}) verifies agreement with \texttt{train.csv} (all classes relative error $<1\%$).
+
+\textbf{Balanced dots (Phase 2, best).} \texttt{label\_mode=balanced\_dots} samples dot-centered positive crops and background crops with zero targets, reducing dominance of empty tiles. Training uses ResNet-50, 20 epochs, batch 256, $lr=10^{-4}$, same tiled validation and 5-shift inference as v2.
+
+\textbf{Gaussian soft dots (Phase 3).} \texttt{label\_mode=gaussian\_dots} replaces hard dot counts in a crop with Gaussian-weighted mass by distance to the crop window. This did not improve Kaggle RMSE (Section~\ref{sec:results}).
+
+\subsection{Stronger Backbones (Phases 4 and 6)}
+After dot supervision (v5), we swapped the backbone while keeping \texttt{balanced\_dots}, scaled test inference, 5-shift TTA, and pup$\times$1.2:
+\begin{itemize}
+    \item \textbf{Phase 4:} \texttt{tf\_efficientnet\_b3\_ns}, 20 epochs, batch 128 $\Rightarrow$ private RMSE \textbf{15.16}.
+    \item \textbf{Phase 6:} \texttt{inception\_resnet\_v2} (Asanakoy architecture), 20 epochs, batch 128 $\Rightarrow$ private RMSE \textbf{14.58} (best).
+\end{itemize}
+Backbone capacity helped once labels were fixed; ResNet-50 with the same dot pipeline (v5) remained at 17.41.
+
+\subsection{Top-3 Push (Phases 7--7b, In Progress)}
+To approach the course top-3 band (private RMSE $<13.05$), we added:
+\begin{itemize}
+    \item \textbf{256-hidden regression head} and dropout 0.5 (checkpoint-compatible via \texttt{build\_counter\_from\_checkpoint\_args}).
+    \item \textbf{Source-crop scale augmentation:} sample a larger/smaller window, count dots in that window, resize to $299\times299$ (\texttt{--scale\_min}/\texttt{--scale\_max}, Asanakoy uses 0.83--1.25 and 0.66--1.5 variants).
+    \item Lab scripts \texttt{run\_phase7\_inception\_v9.sh}, \texttt{run\_phase7\_inception\_v10.sh}, and \texttt{run\_top3\_train\_queue.sh}; quick inference sweeps (\texttt{run\_top3\_quick\_sweeps.sh}) on \texttt{Test\_scaled\_0.4} without retraining.
+\end{itemize}
+Results for v9/v10 are pending at report writing time.
 
 \subsection{Validation and Inference: Tiled Aggregation}
 For full-image evaluation, we slide a $299\times299$ window across each image. Each tile is forwarded through the network; tile outputs are combined into one 5-D count vector.
@@ -170,29 +206,39 @@ For full-image evaluation, we slide a $299\times299$ window across each image. E
     \item \textbf{DataLoader:} \texttt{workers=0} on CUDA to avoid fork-related deadlocks after epoch~1.
 \end{itemize}
 
+\subsection{Test-Time Pipeline and Inference Engineering}
+\textbf{Production inference (best: inception\_v8).} Test images are downscaled to $0.5\times$ (\texttt{Test\_scaled\_0.5/}) \cite{asanakoy2017}. We tile with $299\times299$ windows, stride 299, \textbf{5-shift TTA}: sum tile predictions within each shift, average across shifts, then sum unique tiles to image counts (\texttt{data/predict.py}). Optional pup calibration ($\times 1.2$) is applied via \texttt{data/calibrate\_submission.py}. Phase~5 CSV ensembling with weaker checkpoints (v4, v6) increased RMSE; we submit the single best strong model.
+
+Full test inference covers 18{,}636 images ($\sim$600+ tiles per image with 5 shifts). Profiling on 200 images (batch 512, scaled test) shows $\sim$62\% time in CPU tile preprocessing (resize/normalize), $\sim$24\% GPU forward, $\sim$1.3--1.4 images/s ($\sim$4~h total). We added \texttt{cv2} resize, optional \texttt{--amp}, and pinned-memory host-to-device copies to reduce overhead.
+
 \subsection{Hardware and Reproducibility}
-Training runs on lab machine \textbf{w61} (NVIDIA GPU, 32~GB VRAM; runs use \texttt{cuda:1}). Code, logs (\texttt{log/*.csv}), and submissions (\texttt{submission/*.csv}) are version-controlled where applicable; datasets, checkpoints, and \texttt{.7z} archives remain local. Kaggle credentials are stored in a gitignored workspace directory (\texttt{FP/.kaggle/}) rather than the shared home folder.
+Training runs on lab machine \textbf{w61} (NVIDIA RTX 5090; runs use \texttt{cuda:1}). Code, logs (\texttt{log/*.csv}), and scripts are in Git; datasets, checkpoints, and \texttt{.7z} archives remain local (gitignored). Kaggle credentials are stored in a gitignored workspace directory (\texttt{FP/.kaggle/}).
 
 % ==========================================
 % 4. EXPERIMENTAL RESULTS
 % ==========================================
 \section{Experimental Results}
+\label{sec:results}
 
 \subsection{Baseline Configuration}
 Table~\ref{tab:config} summarizes the primary baseline under development.
 
 \begin{table}[htbp]
 \centering
-\caption{Phase~1 baseline configuration (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}).}
+\caption{Best run configuration (\texttt{inception\_v8\_pup120}, Kaggle priv.\ RMSE 14.58).}
 \label{tab:config}
 \begin{tabular}{@{}ll@{}}
 \toprule
 \textbf{Setting} & \textbf{Value} \\ \midrule
-Backbone & ResNet-50 (timm, ImageNet pretrained) \\
+Backbone & Inception-ResNet v2 (timm, ImageNet pretrained) \\
+Head & Linear 5-d (default; v9/v10 use 256-hidden MLP) \\
 Input tile & $299 \times 299$ \\
-Training & Random tile crops, 8 tiles/image \\
+Training & Balanced dot-centered + background tiles \\
 Batch size & 128 \\
-Epochs & 30 \\
+Epochs & 20 \\
+Label mode & \texttt{balanced\_dots} (Lopuhin dot cache) \\
+Test images & \texttt{Test\_scaled\_0.5} \\
+Post-process & pup count $\times 1.2$ \\
 Optimizer & AdamW, $lr=10^{-4}$, $wd=10^{-4}$ \\
 Val split & 15\% (134 images) \\
 Val tiling & 1 shift, stride 299 \\
@@ -201,14 +247,15 @@ Metric & RMSE (5 classes) \\ \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{Preliminary Training Observations}
+\subsection{Training Observations}
 \begin{itemize}
     \item \textbf{v1 failure mode:} overlapping validation tiles inflated RMSE as training improved (Table~\ref{tab:broken_val}); training was stopped after epoch~5.
-    \item \textbf{v2 (area labels):} after the validation fix, val RMSE decreased monotonically early on and plateaued around epoch~20. Best val RMSE \textbf{36.74} (epoch~20); final epoch val RMSE 37.47. Train RMSE per tile dropped from 0.21 to $\sim$0.18.
-    \item \textbf{Training speed (v2/v3):} $\sim$13--17~s per batch (batch 128, 48 steps/epoch) $\Rightarrow$ $\sim$15--18~min per epoch including validation on 134 images; 30 epochs $\approx$ 7.5--9~h.
-    \item \textbf{GPU utilization:} low average util ($\sim$0--40\%) due to CPU-bound loading of large JPEGs with \texttt{workers=0} (avoids CUDA fork deadlocks).
-    \item \textbf{Val vs.\ Kaggle gap:} v2 local val RMSE (36.74) is higher than Kaggle private RMSE (28.09), likely due to train/val split noise, full-resolution test TTA, and the 18{,}636-image test set differing from our 134-image holdout.
-    \item \textbf{v3 (dots):} dot-cache extraction completed in $\sim$18~min; 30-epoch training was launched with \texttt{fp\_resnet50\_e30\_bs128\_t299\_dots\_v3} (results pending at report time).
+    \item \textbf{v2 (area labels):} best validation RMSE \textbf{36.74} (epoch~20); Kaggle private RMSE \textbf{28.09} with full-resolution test and 5-shift TTA.
+    \item \textbf{v5 (balanced dots, ResNet-50):} Kaggle private RMSE \textbf{17.41}; local val RMSE did not predict leaderboard rank.
+    \item \textbf{effnet\_b3\_v7 (Phase 4):} EfficientNet-B3 + balanced dots $\Rightarrow$ private RMSE \textbf{15.16}.
+    \item \textbf{inception\_v8 (Phase 6):} Inception-ResNet v2 + balanced dots $\Rightarrow$ private RMSE \textbf{14.58} (best).
+    \item \textbf{v6 (gaussian dots):} Kaggle private RMSE \textbf{27.40} --- worse than v2/v4.
+    \item \textbf{Inference cost:} $\sim$18{,}636 test images, $\sim$660 tiles/image, 5 shifts $\Rightarrow$ $\sim$3--4~h on lab GPU (batch 512). Profiling shows CPU tile preprocess $\approx$62\% of time; \texttt{cv2} resize and optional \texttt{--amp} reduce forward cost modestly.
 \end{itemize}
 
 \subsection{v2 Training Curve (Fixed Validation)}
@@ -231,42 +278,51 @@ Table~\ref{tab:v2_curve} lists selected epochs from \texttt{log/fp\_resnet50\_e3
 \end{tabular}
 \end{table}
 
-\subsection{Kaggle Leaderboard (v2)}
-We submitted \texttt{fp\_resnet50\_e30\_bs128\_t299\_v2} using epoch-20 best weights, 5-shift TTA, and the official 18{,}636-row submission schema (integer counts, column order \texttt{test\_id, adult\_males, subadult\_males, adult\_females, juveniles, pups}). Scores below are from a late submission after the original competition deadline.
+\subsection{Kaggle Leaderboard}
+All submissions use the official 18{,}636-row schema (integer counts). Scores are from late course submissions (marked ``after deadline'' on Kaggle).
 
 \begin{figure}[htbp]
     \centering
-    \fbox{\parbox{0.85\textwidth}{\centering\vspace{2.5cm}
-    Placeholder: Kaggle leaderboard screenshot\\ (public RMSE 29.10, private RMSE 28.09)\vspace{2.5cm}}}
-    \caption{Kaggle performance snapshot for v2 (screenshot to be inserted before final deadline).}
+    \IfFileExists{figure/kaggle_snapshot.png}{%
+        \includegraphics[width=0.92\textwidth]{figure/kaggle_snapshot.png}}{%
+        \fbox{\parbox{0.85\textwidth}{\centering\vspace{2.2cm}
+        Insert \texttt{figure/kaggle\_snapshot.png}\\ Best: private RMSE 14.58 (\texttt{inception\_v8\_pup120})\vspace{2.2cm}}}}
+    \caption{Kaggle submissions snapshot (required for report and presentation).}
     \label{fig:kaggle}
 \end{figure}
 
 \begin{table}[htbp]
 \centering
-\caption{Kaggle RMSE for v2 (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}, late submit).}
-\label{tab:kaggle_v2}
-\begin{tabular}{@{}lcc@{}}
+\caption{Kaggle RMSE summary (private / public). Best run in bold.}
+\label{tab:kaggle_all}
+\begin{tabular}{@{}llcc@{}}
 \toprule
-\textbf{Split} & \textbf{RMSE} & \textbf{Notes} \\ \midrule
-Public LB & 29.104 & Best epoch-20 checkpoint \\
-Private LB & 28.085 & Same submission \\
-Historical golden medal (2017) & $\sim$10.9--15.9 & Reference only \\ \bottomrule
+\textbf{Run} & \textbf{Description} & \textbf{Private} & \textbf{Public} \\ \midrule
+\textbf{inception\_v8} & \textbf{Inception-ResNet v2 + balanced dots + pup$\times$1.2} & \textbf{14.58} & \textbf{14.47} \\
+effnet\_b3\_v7 & EfficientNet-B3 + balanced dots + pup$\times$1.2 & 15.16 & 15.58 \\
+v5 & ResNet-50 + balanced dots + pup$\times$1.2 & 17.41 & 17.93 \\
+v4 & v2 ckpt + Test$\times$0.5 + pup$\times$1.2 & 25.54 & 26.55 \\
+v2 & Area labels, full Test, 5-shift TTA & 28.09 & 29.10 \\
+v6 & Gaussian soft dots + scaled test + pup$\times$1.2 & 27.40 & 28.40 \\
+Ensemble 0.9v5+0.1v4 & Phase 5 blend & 17.61 & 18.14 \\
+Historical best (2017) & Competition winner & $\sim$10.86 & $\sim$10.98 \\ \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{table}[htbp]
 \centering
-\caption{Results summary (preliminary).}
+\caption{Ablation-style comparison (local validation vs.\ Kaggle private).}
 \label{tab:results}
-\begin{tabular}{@{}p{2.8cm}p{3.2cm}ccc@{}}
+\begin{tabular}{@{}p{2.4cm}p{3.6cm}cc@{}}
 \toprule
-\textbf{Run} & \textbf{Label mode} & \textbf{Local Val RMSE} & \textbf{Kaggle RMSE} & \textbf{Status} \\ \midrule
-v1 & Area fraction & 90.67 (ep.~1) & --- & Stopped (val bug) \\
-v2 & Area fraction & \textbf{36.74} (ep.~20) & 28.09 (priv.) & Complete \\
-v3 & TrainDotted dots & TBD & TBD & Training \\
---- & Test downscale 0.5$\times$ & --- & --- & Planned \\
---- & Ensemble / larger backbone & --- & --- & Planned \\ \bottomrule
+\textbf{Run} & \textbf{Key change} & \textbf{Val RMSE} & \textbf{Kaggle priv.} \\ \midrule
+v2 & Area-fraction tile targets & 36.74 & 28.09 \\
+v4 & + Test downscale 0.5$\times$, pup$\times$1.2 (v2 weights) & --- & 25.54 \\
+v5 & + Lopuhin dots, balanced tiles (ResNet-50) & 35.65 & 17.41 \\
+effnet\_b3 & + EfficientNet-B3 backbone & --- & 15.16 \\
+\textbf{inception\_v8} & + Inception-ResNet v2 backbone & --- & \textbf{14.58} \\
+v6 & + Gaussian soft dot targets & 44.74 & 27.40 \\
+Blend v5+v4 & Ensemble (weak + strong) & --- & $>$17.41 \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -276,16 +332,46 @@ Beyond modeling, several pipeline issues were resolved during Phase~1:
     \item \textbf{Dataset download:} streaming \texttt{curl} for the 96~GB 7z archive (Kaggle Python client OOM on large files).
     \item \textbf{Submission format:} 18{,}636 test rows from official \texttt{sample\_submission.csv}; integer-rounded counts; correct Kaggle column names.
     \item \textbf{Validation metric:} non-overlapping tile grid for training-time val; shift-averaged TTA at inference.
-    \item \textbf{Dot cache (v3):} one-time extraction from 891 Train/TrainDotted pairs; reused across runs unless explicitly rebuilt.
+    \item \textbf{Dot cache:} imported Lopuhin coordinates (\texttt{import\_dot\_coords.py}); gate-checked against \texttt{train.csv}.
 \end{itemize}
 
-\subsection{Planned Phase~2 Experiments}
+\subsection{Phase Roadmap}
+Table~\ref{tab:phases} lists experiments executed on lab GPU w61 (2026/05/20--29).
+
+\begin{table}[htbp]
+\centering
+\caption{Experiment phases and Kaggle private RMSE.}
+\label{tab:phases}
+\begin{tabular}{@{}clc@{}}
+\toprule
+\textbf{Phase} & \textbf{Change} & \textbf{Priv.\ RMSE} \\ \midrule
+0 & v2 ckpt + Test$\times$0.5 + TTA + pup$\times$1.2 & 25.54 \\
+1 & Lopuhin dot import + gate & (labels only) \\
+2 & \texttt{balanced\_dots} (ResNet-50) & 17.41 \\
+3 & \texttt{gaussian\_dots} soft targets & 27.40 \\
+4 & EfficientNet-B3 + balanced dots & 15.16 \\
+5 & Ensemble v5+v4 or v6+v5 & $>$17.41 \\
+6 & Inception-ResNet v2 + balanced dots & \textbf{14.58} \\
+7--7b & Inception + 256-head + scale aug (v9/v10) & (running) \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Studies and Negative Results}
+\begin{itemize}
+    \item \textbf{Test downscaling (v4):} Using the v2 checkpoint on \texttt{Test\_scaled\_0.5} improved private RMSE from 28.09 to 25.54 without retraining.
+    \item \textbf{Pup calibration:} Scaling pup predictions by 1.2 helped v4/v5 on the leaderboard ($\approx$0.1--0.2 RMSE gain on v5).
+    \item \textbf{Ensembling with v4:} Blending v5 with the weaker v4 submission monotonically increased RMSE (best blend 17.61 vs.\ 17.41 pure v5).
+    \item \textbf{Gaussian dot targets (v6):} Softer supervision hurt both validation and Kaggle scores vs.\ hard balanced dots.
+    \item \textbf{Backbone swap (Phases 4/6):} With fixed dot labels, Inception-ResNet v2 beat ResNet-50 by $\sim$2.8 RMSE private (17.41 $\rightarrow$ 14.58).
+    \item \textbf{Validation metric:} Image-level val RMSE on 134 holdout images is a poor proxy for 18k-image Kaggle RMSE once dot-based training is used.
+\end{itemize}
+
+\subsection{Ongoing and Future Work}
 \begin{enumerate}
-    \item Complete v3 dot-label training and Kaggle evaluation.
-    \item Downscale \texttt{Test/} to 0.5$\times$ (\texttt{scripts/preprocess.py --downscale\_test 0.5}).
-    \item Try ConvNeXt / ResNet-RS backbones.
-    \item Pup count calibration (\texttt{--pup\_scale}) after baseline LB score.
-    \item Model ensemble (\texttt{ensemble.py}).
+    \item \textbf{Phase 7--7b:} Inception-ResNet v2 with 256-hidden head and Asanakoy scale augmentation (target private RMSE $<13.05$ for top-3 grading).
+    \item \textbf{Strong-model ensembles:} Blend inception\_v8 with effnet\_b3\_v7 or v9/v10 (avoid weak v4/v6 blends).
+    \item \textbf{Test-scale sweep:} \texttt{Test\_scaled\_0.4} inference without retraining.
+    \item Heatmap / UNet-style density maps (Lopuhin \cite{lopuhin2017}) if tile regression plateaus.
 \end{enumerate}
 
 % ==========================================
@@ -293,20 +379,20 @@ Beyond modeling, several pipeline issues were resolved during Phase~1:
 % ==========================================
 \section{Team Member Contribution}
 
-\textit{[Update percentages before presentation. Example layout from course slides.]}
+Solo project (Student ID 313540001). Percentages per course template:
 
 \begin{table}[htbp]
 \centering
-\caption{Team contribution table (placeholder --- adjust for actual team).}
+\caption{Team contribution table (\%).}
 \label{tab:team}
-\begin{tabular}{@{}lcccc@{}}
+\begin{tabular}{@{}lc@{}}
 \toprule
-\textbf{Task} & \textbf{Member 1} & \textbf{Member 2} & \textbf{Member 3} & \textbf{Member 4} \\ \midrule
-Literature survey & 100 & 0 & 0 & 0 \\
-Approach design & 50 & 50 & 0 & 0 \\
-Implementation / experiments & 70 & 30 & 0 & 0 \\
-Report writing & 100 & 0 & 0 & 0 \\
-Slides / presentation & 100 & 0 & 0 & 0 \\ \bottomrule
+\textbf{Task} & \textbf{313540001} \\ \midrule
+Literature survey & 100 \\
+Approach design & 100 \\
+Approach implementation (experiment) & 100 \\
+Report writing & 100 \\
+Slide making and oral presentation & 100 \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -315,9 +401,11 @@ Slides / presentation & 100 & 0 & 0 & 0 \\ \bottomrule
 % ==========================================
 \section{Conclusion}
 
-We presented a preliminary report for the NOAA Steller Sea Lion Population Count final project. Our Phase~1 pipeline uses ResNet-50 tile regression with ImageNet pretraining, following established Kaggle solutions. Key engineering contributions include robust large-file download, corrected label and submission handling, and a fix for misleading validation RMSE caused by overlapping tile summation.
+We built a reproducible tile-regression pipeline for the NOAA Steller Sea Lion Population Count competition, following top Kaggle solutions: large-image tiling, test downscaling, multi-shift TTA, and dot-aware tile supervision. Engineering fixes (streaming download, submission schema, non-overlapping validation, shift-averaged TTA) were necessary before model improvements appeared on the leaderboard.
 
-The v2 baseline (\texttt{fp\_resnet50\_e30\_bs128\_t299\_v2}) completed 30 epochs with best validation RMSE \textbf{36.74} and Kaggle private RMSE \textbf{28.09}. v3 training with dot-count labels from \texttt{TrainDotted} was in progress at report time. The final report will add the Kaggle screenshot, v3 results, training-curve figures, and ablations (test downscaling, TTA, ensemble).
+Our best result uses community dot coordinates \cite{lopuhin2017}, balanced dot-centered tile training, \textbf{Inception-ResNet v2} inference on $0.5\times$ scaled test images, and pup count calibration, achieving Kaggle private RMSE \textbf{14.58} (public 14.47)---a $\sim$48\% relative improvement over the area-label baseline (28.09) and $\sim$16\% over ResNet-50 with the same labels (17.41). EfficientNet-B3 reached 15.16. Test-time ensembling with weaker models and Gaussian soft-dot targets did not help; backbone choice after fixing supervision was the largest remaining gain.
+
+\textbf{Findings:} (1)~Dot-aligned tile targets matter more than backbone or area-fraction scaling; (2)~Inception-ResNet v2 matches the public 4th-place recipe better than ResNet-50; (3)~test downscaling and pup calibration are cheap inference-time gains; (4)~ensembling requires comparably strong checkpoints; (5)~CPU tile preprocessing dominates inference ($\sim$4~h for 18k images). Phase~7 (hidden head + scale augmentation) targets the course top-3 band ($<13.05$ private RMSE). We include the required code link, Kaggle snapshot, contribution table, and ablations above.
 
 % ==========================================
 % REFERENCES

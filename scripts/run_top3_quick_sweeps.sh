@@ -30,14 +30,10 @@ PHASE_TITLE="top3 v8 test04" \
   TEST_SUBDIR=Test_scaled_0.4 BATCH_SIZE="$INFER_BS" AMP=1 \
   bash scripts/run_infer_v5.sh
 
-RUN_NAME=inception_v8_test04 SUBMIT_MSG="FP inception v8 test04" \
+RUN_NAME=inception_v8_test04 SUBMIT_MSG="FP inception v8 test04 pup120" \
   BEST_RMSE="$BEST_RMSE" bash scripts/finish_phase_run.sh
 
-python -m data.calibrate_submission submission/inception_v8_test04.csv \
-  --scale pups=1.2 --output submission/inception_v8_test04_pup120.csv
-bash scripts/submit.sh submission/inception_v8_test04_pup120.csv "FP inception v8 test04 pup120"
-
-if [[ -f submission/effnet_b3_v7_pup120.csv ]]; then
+if [[ -f submission/inception_v8_pup120.csv && -f submission/effnet_b3_v7_pup120.csv ]]; then
   echo "--- blend inception_v8_pup120 + effnet_b3_v7_pup120 ---"
   for w in 0.8 0.7 0.6; do
     v=$(python -c "print(round(1.0 - $w, 2))")
@@ -48,6 +44,8 @@ if [[ -f submission/effnet_b3_v7_pup120.csv ]]; then
       --output "$out"
     bash scripts/submit.sh "$out" "FP blend v8 ${w} effnet ${v}"
   done
+else
+  echo "Skip v8+effnet blends: need submission/inception_v8_pup120.csv and submission/effnet_b3_v7_pup120.csv"
 fi
 
 echo "Done. Check: kaggle competitions submissions -c noaa-fisheries-steller-sea-lion-population-count"

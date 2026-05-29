@@ -15,7 +15,7 @@ GPU=${GPU:-1}
 SCALE=${SCALE:-0.5}
 TEST_SUBDIR=${TEST_SUBDIR:-Test_scaled_${SCALE}}
 SHIFTS=${SHIFTS:-5}
-STRIDE=${STRIDE:-299}
+STRIDE=${STRIDE:-}
 BATCH_SIZE=${BATCH_SIZE:-64}
 SUBMIT_MSG=${SUBMIT_MSG:-}
 if [[ -z "$SUBMIT_MSG" ]]; then
@@ -53,14 +53,18 @@ PROFILE_ARGS=()
 if [[ "${PROFILE_INFERENCE:-0}" == "1" ]]; then
   PROFILE_ARGS+=(--profile_inference)
 fi
+STRIDE_ARGS=()
+if [[ -n "$STRIDE" ]]; then
+  STRIDE_ARGS+=(--stride "$STRIDE")
+fi
 
 python inference.py "$CHECKPOINT" \
   --run_name "$RUN_NAME" \
   --gpu "$GPU" \
   --test_subdir "$TEST_SUBDIR" \
   --shifts "$SHIFTS" \
-  --stride "$STRIDE" \
   --batch_size "$BATCH_SIZE" \
+  "${STRIDE_ARGS[@]}" \
   "${PROFILE_ARGS[@]}"
 
 CSV="submission/${RUN_NAME}.csv"

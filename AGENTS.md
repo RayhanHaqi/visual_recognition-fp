@@ -17,10 +17,12 @@
 - Top 3: 40 pts
 - Within 3% of best score: 50 pts (detection/counting band: 3%)
 
-## Presentation
-- Slot: **2026/06/02** (topic 3)
-- Report due: **2026/05/31 23:59** (slides may update later; report cannot)
-- Required in slides/report: Kaggle rank screenshot, team contribution table, code link
+## Presentation & course deliverables
+- Slot: **2026/06/02** (topic 3 — NOAA sea lions)
+- Report + code on **E3**: **2026/05/31 23:59** (late −20/day; **report cannot** be updated after; slides can)
+- Presentation: **12 min** (10 + 2 Q&A)
+- Required in **both** report and slides: Kaggle rank screenshot, team contribution table (5 tasks), code link
+- Full checklist: `docs/COURSE_REQUIREMENTS.md` (from `(114-2)FinalProject.pdf`, `Tips_FinalProj_Presentation.pdf`)
 
 ## Lab setup (clone → train)
 
@@ -96,7 +98,17 @@ bash scripts/run_phases_4_and_6.sh
 
 Single phase or resume: `PHASE=4 bash scripts/run_phases_4_and_6.sh` or `SKIP_PHASE4=1 bash scripts/run_phases_4_and_6.sh`. OOM: `BS=64` in `run_phase4.sh` / `run_phase6_inception.sh`, or `INFER_BS=128`.
 
-Targets to beat: **17.41** private (`balanced_dots_v5_pup120`). Full UNet density maps remain out of scope (see lopuhin2017).
+Targets to beat: **14.441** private (`blend_v80.7_effnet0.3`); **14.577** (`inception_v8_pup120`).
+
+**After tile-CNN ceiling (1st / 2nd place) — one script:**
+
+```bash
+bash scripts/run_1st_2nd_place.sh                # VGG train→infer→submit, then Lopuhin setup→submit
+PHASE=8 bash scripts/run_1st_2nd_place.sh      # 1st place only
+PHASE=9 LOPUHIN_CSV=path/to/raw.csv SKIP_LOPUHIN_TRAIN=1 bash scripts/run_1st_2nd_place.sh
+```
+
+Docs: `docs/PHASE8_OUTRUNNER_VGG.md`, `docs/PHASE9_LOPUHIN_UNET.md`
 
 ## Post-Phase-3 workflow (lab)
 
@@ -108,6 +120,13 @@ bash scripts/run_phase5_blend_v6_v5.sh # only if v6 is competitive with v5 (17.4
 ```
 
 Report skeleton: `docs/REPORT_OUTLINE.md`. Faster infer: `AMP=1` in `scripts/run_infer_v5.sh` or `python inference.py ... --amp`.
+
+## Experiment documentation
+
+- **Log every trial + decision:** `docs/EXPERIMENT_LOG.md` (update after each Kaggle submit).
+- **Strategy:** current tile pipeline until RMSE plateaus, then 1st (VGG/outrunner) and 2nd (UNet/Lopuhin) per backlog in that file.
+- **Course tasks / deadlines:** `docs/COURSE_REQUIREMENTS.md`
+- Report skeleton: `docs/REPORT_OUTLINE.md`
 
 ## Reference solutions (related work)
 - https://github.com/lopuhin/kaggle-lions-2017 (UNet + regressor, 2nd place)

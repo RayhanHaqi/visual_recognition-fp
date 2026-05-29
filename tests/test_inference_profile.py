@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from data.predict import InferenceTimings, format_inference_profile, predict_image_tiled
+from data.tiling import iter_tile_windows
 
 
 def test_inference_timings_accumulates_counts():
@@ -50,7 +51,11 @@ def test_predict_image_tiled_records_timings(mini_data_dir):
 
     assert pred.shape == (5,)
     assert timings.n_images == 1
-    assert timings.n_tiles > 0
+    from PIL import Image
+
+    with Image.open(test_path) as img:
+        expected_tiles = len(list(iter_tile_windows(*img.size, tile_size=128, stride=128, shifts=1)))
+    assert timings.n_tiles == expected_tiles
     assert timings.n_batch_forwards > 0
     assert timings.load_image_sec >= 0.0
     assert timings.preprocess_sec >= 0.0
