@@ -43,7 +43,7 @@
 \noindent \textbf{Kaggle Competition:} \href{https://www.kaggle.com/competitions/noaa-fisheries-steller-sea-lion-population-count}{NOAA Fisheries Steller Sea Lion Population Count}
 
 \vspace{0.3cm}
-\noindent \textit{Final project report for E3 upload (deadline 2026/05/31 23:59; presentation 2026/06/02, Topic~3). Kaggle scores are from late course submissions after the original 2017 competition close. Best private RMSE: \textbf{14.58} (\texttt{inception\_v8\_pup120}). Insert \texttt{figure/kaggle\_snapshot.png} before the final PDF build.}
+\noindent \textit{Final project report for E3 upload (deadline 2026/05/31 23:59; presentation 2026/06/02, Topic~3). Kaggle scores are from late course submissions after the original 2017 competition close. Best private RMSE: \textbf{14.44129} (\texttt{blend\_v80.7\_effnet0.3}). Insert \texttt{figure/kaggle\_snapshot.png} before the final PDF build.}
 
 % ==========================================
 % 1. INTRODUCTION
@@ -153,22 +153,24 @@ Area-fraction targets (v1/v2) scale image-level counts by crop size but do not u
 
 \textbf{Gaussian soft dots (Phase 3).} \texttt{label\_mode=gaussian\_dots} replaces hard dot counts in a crop with Gaussian-weighted mass by distance to the crop window. This did not improve Kaggle RMSE (Section~\ref{sec:results}).
 
-\subsection{Stronger Backbones (Phases 4 and 6)}
+\subsection{Stronger Backbones and Strong Blending (Phases 4--6)}
 After dot supervision (v5), we swapped the backbone while keeping \texttt{balanced\_dots}, scaled test inference, 5-shift TTA, and pup$\times$1.2:
 \begin{itemize}
-    \item \textbf{Phase 4:} \texttt{tf\_efficientnet\_b3\_ns}, 20 epochs, batch 128 $\Rightarrow$ private RMSE \textbf{15.16}.
-    \item \textbf{Phase 6:} \texttt{inception\_resnet\_v2} (Asanakoy architecture), 20 epochs, batch 128 $\Rightarrow$ private RMSE \textbf{14.58} (best).
+    \item \textbf{Phase 4:} \texttt{tf\_efficientnet\_b3\_ns}, 20 epochs, batch 128 $\Rightarrow$ local val RMSE 28.4067, private RMSE \textbf{15.16}.
+    \item \textbf{Phase 6:} \texttt{inception\_resnet\_v2} (Asanakoy architecture), 20 epochs, batch 128 $\Rightarrow$ local val RMSE 24.2748, private RMSE \textbf{14.58}.
+    \item \textbf{Strong blend:} 70\% \texttt{inception\_v8} + 30\% \texttt{effnet\_b3\_v7} improved the leaderboard to private RMSE \textbf{14.44129}.
 \end{itemize}
-Backbone capacity helped once labels were fixed; ResNet-50 with the same dot pipeline (v5) remained at 17.41.
+Backbone capacity helped once labels were fixed; ResNet-50 with the same dot pipeline (v5) remained at 17.41. The local validation split was useful for checkpoint selection inside a run, but it was not calibrated to Kaggle: \texttt{inception\_v8} had local val 24.27 yet private 14.58, while \texttt{effnet\_b3\_v7} had local val 28.41 yet private 15.16.
 
-\subsection{Top-3 Push (Phases 7--7b, In Progress)}
+\subsection{Top-3 Push and Top-Solution Follow-Up (Phases 7--9)}
 To approach the course top-3 band (private RMSE $<13.05$), we added:
 \begin{itemize}
     \item \textbf{256-hidden regression head} and dropout 0.5 (checkpoint-compatible via \texttt{build\_counter\_from\_checkpoint\_args}).
     \item \textbf{Source-crop scale augmentation:} sample a larger/smaller window, count dots in that window, resize to $299\times299$ (\texttt{--scale\_min}/\texttt{--scale\_max}, Asanakoy uses 0.83--1.25 and 0.66--1.5 variants).
     \item Lab scripts \texttt{run\_phase7\_inception\_v9.sh}, \texttt{run\_phase7\_inception\_v10.sh}, and \texttt{run\_top3\_train\_queue.sh}; quick inference sweeps (\texttt{run\_top3\_quick\_sweeps.sh}) on \texttt{Test\_scaled\_0.4} without retraining.
+    \item Phase~8 begins the 1st-place-inspired VGG-16 tile regression recipe (\texttt{vgg16}, $300\times300$ tiles); Phase~9 prepares Lopuhin's 2nd-place UNet vendor path for later.
 \end{itemize}
-Results for v9/v10 are pending at report writing time.
+The first medium-scale v9 submission underperformed (private RMSE 15.76321), and the no-retrain \texttt{Test\_scaled\_0.4} sweep failed badly (private RMSE 27.64312). Therefore the current best remains the \texttt{inception\_v8}/\texttt{effnet\_b3} blend while VGG training runs on GPU~0.
 
 \subsection{Validation and Inference: Tiled Aggregation}
 For full-image evaluation, we slide a $299\times299$ window across each image. Each tile is forwarded through the network; tile outputs are combined into one 5-D count vector.
@@ -207,7 +209,7 @@ For full-image evaluation, we slide a $299\times299$ window across each image. E
 \end{itemize}
 
 \subsection{Test-Time Pipeline and Inference Engineering}
-\textbf{Production inference (best: inception\_v8).} Test images are downscaled to $0.5\times$ (\texttt{Test\_scaled\_0.5/}) \cite{asanakoy2017}. We tile with $299\times299$ windows, stride 299, \textbf{5-shift TTA}: sum tile predictions within each shift, average across shifts, then sum unique tiles to image counts (\texttt{data/predict.py}). Optional pup calibration ($\times 1.2$) is applied via \texttt{data/calibrate\_submission.py}. Phase~5 CSV ensembling with weaker checkpoints (v4, v6) increased RMSE; we submit the single best strong model.
+\textbf{Production inference (best: strong blend).} Test images are downscaled to $0.5\times$ (\texttt{Test\_scaled\_0.5/}) \cite{asanakoy2017}. We tile with $299\times299$ windows, stride 299, \textbf{5-shift TTA}: sum tile predictions within each shift, average across shifts, then sum unique tiles to image counts (\texttt{data/predict.py}). Optional pup calibration ($\times 1.2$) is applied via \texttt{data/calibrate\_submission.py}. Blending weak checkpoints (v4, v6) increased RMSE, but blending two strong backbones helped: \texttt{blend\_v80.7\_effnet0.3} is the current production submission.
 
 Full test inference covers 18{,}636 images ($\sim$600+ tiles per image with 5 shifts). Profiling on 200 images (batch 512, scaled test) shows $\sim$62\% time in CPU tile preprocessing (resize/normalize), $\sim$24\% GPU forward, $\sim$1.3--1.4 images/s ($\sim$4~h total). We added \texttt{cv2} resize, optional \texttt{--amp}, and pinned-memory host-to-device copies to reduce overhead.
 
@@ -225,7 +227,7 @@ Table~\ref{tab:config} summarizes the primary baseline under development.
 
 \begin{table}[htbp]
 \centering
-\caption{Best run configuration (\texttt{inception\_v8\_pup120}, Kaggle priv.\ RMSE 14.58).}
+\caption{Best single-model configuration (\texttt{inception\_v8\_pup120}, Kaggle priv.\ RMSE 14.58). The best submitted CSV is a 0.7/0.3 blend with EfficientNet-B3 (priv.\ 14.44129).}
 \label{tab:config}
 \begin{tabular}{@{}ll@{}}
 \toprule
@@ -252,8 +254,10 @@ Metric & RMSE (5 classes) \\ \bottomrule
     \item \textbf{v1 failure mode:} overlapping validation tiles inflated RMSE as training improved (Table~\ref{tab:broken_val}); training was stopped after epoch~5.
     \item \textbf{v2 (area labels):} best validation RMSE \textbf{36.74} (epoch~20); Kaggle private RMSE \textbf{28.09} with full-resolution test and 5-shift TTA.
     \item \textbf{v5 (balanced dots, ResNet-50):} Kaggle private RMSE \textbf{17.41}; local val RMSE did not predict leaderboard rank.
-    \item \textbf{effnet\_b3\_v7 (Phase 4):} EfficientNet-B3 + balanced dots $\Rightarrow$ private RMSE \textbf{15.16}.
-    \item \textbf{inception\_v8 (Phase 6):} Inception-ResNet v2 + balanced dots $\Rightarrow$ private RMSE \textbf{14.58} (best).
+    \item \textbf{effnet\_b3\_v7 (Phase 4):} EfficientNet-B3 + balanced dots $\Rightarrow$ local val RMSE \textbf{28.4067}, private RMSE \textbf{15.16}.
+    \item \textbf{inception\_v8 (Phase 6):} Inception-ResNet v2 + balanced dots $\Rightarrow$ local val RMSE \textbf{24.2748}, private RMSE \textbf{14.58}.
+    \item \textbf{Strong blend:} 0.7 \texttt{inception\_v8} + 0.3 \texttt{effnet\_b3\_v7} $\Rightarrow$ private RMSE \textbf{14.44129} (current best).
+    \item \textbf{Phase 7 v9:} Inception-ResNet v2 + 256-hidden head + scale 0.83--1.25 underperformed at private RMSE \textbf{15.76321}; v10 remains pending/running.
     \item \textbf{v6 (gaussian dots):} Kaggle private RMSE \textbf{27.40} --- worse than v2/v4.
     \item \textbf{Inference cost:} $\sim$18{,}636 test images, $\sim$660 tiles/image, 5 shifts $\Rightarrow$ $\sim$3--4~h on lab GPU (batch 512). Profiling shows CPU tile preprocess $\approx$62\% of time; \texttt{cv2} resize and optional \texttt{--amp} reduce forward cost modestly.
 \end{itemize}
@@ -286,22 +290,26 @@ All submissions use the official 18{,}636-row schema (integer counts). Scores ar
     \IfFileExists{figure/kaggle_snapshot.png}{%
         \includegraphics[width=0.92\textwidth]{figure/kaggle_snapshot.png}}{%
         \fbox{\parbox{0.85\textwidth}{\centering\vspace{2.2cm}
-        Insert \texttt{figure/kaggle\_snapshot.png}\\ Best: private RMSE 14.58 (\texttt{inception\_v8\_pup120})\vspace{2.2cm}}}}
+        Insert \texttt{figure/kaggle\_snapshot.png}\\ Best: private RMSE 14.44129 (\texttt{blend\_v80.7\_effnet0.3})\vspace{2.2cm}}}}
     \caption{Kaggle submissions snapshot (required for report and presentation).}
     \label{fig:kaggle}
 \end{figure}
 
 \begin{table}[htbp]
 \centering
-\caption{Kaggle RMSE summary (private / public). Best run in bold.}
+\caption{Kaggle RMSE summary (private / public). Best submitted CSV in bold.}
 \label{tab:kaggle_all}
 \begin{tabular}{@{}llcc@{}}
 \toprule
 \textbf{Run} & \textbf{Description} & \textbf{Private} & \textbf{Public} \\ \midrule
-\textbf{inception\_v8} & \textbf{Inception-ResNet v2 + balanced dots + pup$\times$1.2} & \textbf{14.58} & \textbf{14.47} \\
+\textbf{blend\_v80.7\_effnet0.3} & \textbf{0.7 Inception-v8 + 0.3 EfficientNet-B3 CSV blend} & \textbf{14.44129} & \textbf{14.45932} \\
+blend\_v80.6\_effnet0.4 & 0.6 Inception-v8 + 0.4 EfficientNet-B3 CSV blend & 14.45153 & 14.52362 \\
+blend\_v80.8\_effnet0.2 & 0.8 Inception-v8 + 0.2 EfficientNet-B3 CSV blend & 14.45554 & 14.42525 \\
+inception\_v8 & Inception-ResNet v2 + balanced dots + pup$\times$1.2 & 14.57729 & 14.47039 \\
 effnet\_b3\_v7 & EfficientNet-B3 + balanced dots + pup$\times$1.2 & 15.16 & 15.58 \\
+inception\_v9 & Inception + h256 head + scale 0.83--1.25 + pup$\times$1.2 & 15.76321 & 15.93429 \\
 v5 & ResNet-50 + balanced dots + pup$\times$1.2 & 17.41 & 17.93 \\
-v4 & v2 ckpt + Test$\times$0.5 + pup$\times$1.2 & 25.54 & 26.55 \\
+inception\_v8\_test04 & v8 checkpoint on Test$\times$0.4 + pup$\times$1.2 & 27.64312 & 28.56739 \\
 v2 & Area labels, full Test, 5-shift TTA & 28.09 & 29.10 \\
 v6 & Gaussian soft dots + scaled test + pup$\times$1.2 & 27.40 & 28.40 \\
 Ensemble 0.9v5+0.1v4 & Phase 5 blend & 17.61 & 18.14 \\
@@ -319,8 +327,10 @@ Historical best (2017) & Competition winner & $\sim$10.86 & $\sim$10.98 \\ \bott
 v2 & Area-fraction tile targets & 36.74 & 28.09 \\
 v4 & + Test downscale 0.5$\times$, pup$\times$1.2 (v2 weights) & --- & 25.54 \\
 v5 & + Lopuhin dots, balanced tiles (ResNet-50) & 35.65 & 17.41 \\
-effnet\_b3 & + EfficientNet-B3 backbone & --- & 15.16 \\
-\textbf{inception\_v8} & + Inception-ResNet v2 backbone & --- & \textbf{14.58} \\
+effnet\_b3 & + EfficientNet-B3 backbone & 28.41 & 15.16 \\
+inception\_v8 & + Inception-ResNet v2 backbone & 24.27 & 14.58 \\
+\textbf{blend v8+effnet} & \textbf{Strong-backbone CSV blend} & --- & \textbf{14.44129} \\
+inception\_v9 & + h256 head + source-crop scale aug & --- & 15.76 \\
 v6 & + Gaussian soft dot targets & 44.74 & 27.40 \\
 Blend v5+v4 & Ensemble (weak + strong) & --- & $>$17.41 \\ \bottomrule
 \end{tabular}
@@ -351,8 +361,12 @@ Table~\ref{tab:phases} lists experiments executed on lab GPU w61 (2026/05/20--29
 3 & \texttt{gaussian\_dots} soft targets & 27.40 \\
 4 & EfficientNet-B3 + balanced dots & 15.16 \\
 5 & Ensemble v5+v4 or v6+v5 & $>$17.41 \\
-6 & Inception-ResNet v2 + balanced dots & \textbf{14.58} \\
-7--7b & Inception + 256-head + scale aug (v9/v10) & (running) \\ \bottomrule
+6 & Inception-ResNet v2 + balanced dots & 14.58 \\
+6b & Strong blend: 0.7 Inception-v8 + 0.3 EfficientNet-B3 & \textbf{14.44129} \\
+7 & Inception + 256-head + scale aug (v9) & 15.76 \\
+7b & Inception + wider scale aug (v10) & (running) \\
+8 & 1st-place-inspired VGG-16 tile regressor & (running) \\
+9 & Lopuhin UNet vendor setup & (prepared) \\ \bottomrule
 \end{tabular}
 \end{table}
 
@@ -363,15 +377,17 @@ Table~\ref{tab:phases} lists experiments executed on lab GPU w61 (2026/05/20--29
     \item \textbf{Ensembling with v4:} Blending v5 with the weaker v4 submission monotonically increased RMSE (best blend 17.61 vs.\ 17.41 pure v5).
     \item \textbf{Gaussian dot targets (v6):} Softer supervision hurt both validation and Kaggle scores vs.\ hard balanced dots.
     \item \textbf{Backbone swap (Phases 4/6):} With fixed dot labels, Inception-ResNet v2 beat ResNet-50 by $\sim$2.8 RMSE private (17.41 $\rightarrow$ 14.58).
+    \item \textbf{Strong-only blend:} Blending \texttt{inception\_v8} and \texttt{effnet\_b3\_v7} improved private RMSE to 14.44129; unlike weak blends, this ensemble combined comparably strong models.
+    \item \textbf{Scale-augmented Inception v9:} The first h256 + scale run underperformed at 15.76321 private, so the best reportable submission remains the v8/EfficientNet blend.
     \item \textbf{Validation metric:} Image-level val RMSE on 134 holdout images is a poor proxy for 18k-image Kaggle RMSE once dot-based training is used.
 \end{itemize}
 
 \subsection{Ongoing and Future Work}
 \begin{enumerate}
-    \item \textbf{Phase 7--7b:} Inception-ResNet v2 with 256-hidden head and Asanakoy scale augmentation (target private RMSE $<13.05$ for top-3 grading).
-    \item \textbf{Strong-model ensembles:} Blend inception\_v8 with effnet\_b3\_v7 or v9/v10 (avoid weak v4/v6 blends).
-    \item \textbf{Test-scale sweep:} \texttt{Test\_scaled\_0.4} inference without retraining.
-    \item Heatmap / UNet-style density maps (Lopuhin \cite{lopuhin2017}) if tile regression plateaus.
+    \item \textbf{Phase 7b:} Complete the wider-scale Inception v10 run and submit only if its validation/leaderboard behavior improves over v9.
+    \item \textbf{Phase 8:} Continue the 1st-place-inspired VGG-16 300px tile-regression run on GPU~0.
+    \item \textbf{Phase 9:} Lopuhin UNet vendor code is cloned and prepared; full UNet training is deferred because it requires a legacy environment or modern port.
+    \item \textbf{Final selection:} Keep \texttt{blend\_v80.7\_effnet0.3} unless VGG/v10 produces a lower private RMSE before the report deadline.
 \end{enumerate}
 
 % ==========================================
@@ -403,9 +419,9 @@ Slide making and oral presentation & 100 \\ \bottomrule
 
 We built a reproducible tile-regression pipeline for the NOAA Steller Sea Lion Population Count competition, following top Kaggle solutions: large-image tiling, test downscaling, multi-shift TTA, and dot-aware tile supervision. Engineering fixes (streaming download, submission schema, non-overlapping validation, shift-averaged TTA) were necessary before model improvements appeared on the leaderboard.
 
-Our best result uses community dot coordinates \cite{lopuhin2017}, balanced dot-centered tile training, \textbf{Inception-ResNet v2} inference on $0.5\times$ scaled test images, and pup count calibration, achieving Kaggle private RMSE \textbf{14.58} (public 14.47)---a $\sim$48\% relative improvement over the area-label baseline (28.09) and $\sim$16\% over ResNet-50 with the same labels (17.41). EfficientNet-B3 reached 15.16. Test-time ensembling with weaker models and Gaussian soft-dot targets did not help; backbone choice after fixing supervision was the largest remaining gain.
+Our best result uses community dot coordinates \cite{lopuhin2017}, balanced dot-centered tile training, \textbf{Inception-ResNet v2} and \textbf{EfficientNet-B3} inference on $0.5\times$ scaled test images, pup count calibration, and a strong-backbone CSV blend, achieving Kaggle private RMSE \textbf{14.44129} (public 14.45932). This is a $\sim$49\% relative improvement over the area-label baseline (28.09) and $\sim$17\% over ResNet-50 with the same labels (17.41). The best single model remains Inception-ResNet v2 at 14.57729 private; EfficientNet-B3 reached 15.15912. Ensembling with weak models and Gaussian soft-dot targets did not help; blending comparably strong backbones did.
 
-\textbf{Findings:} (1)~Dot-aligned tile targets matter more than backbone or area-fraction scaling; (2)~Inception-ResNet v2 matches the public 4th-place recipe better than ResNet-50; (3)~test downscaling and pup calibration are cheap inference-time gains; (4)~ensembling requires comparably strong checkpoints; (5)~CPU tile preprocessing dominates inference ($\sim$4~h for 18k images). Phase~7 (hidden head + scale augmentation) targets the course top-3 band ($<13.05$ private RMSE). We include the required code link, Kaggle snapshot, contribution table, and ablations above.
+\textbf{Findings:} (1)~Dot-aligned tile targets matter more than backbone or area-fraction scaling; (2)~Inception-ResNet v2 matches the public 4th-place recipe better than ResNet-50; (3)~test downscaling and pup calibration are cheap inference-time gains; (4)~ensembling requires comparably strong checkpoints; (5)~local validation RMSE is not directly comparable to Kaggle RMSE; (6)~CPU tile preprocessing dominates inference ($\sim$4~h for 18k images). Phase~8 (VGG-16) and Phase~9 (Lopuhin UNet) document the post-ceiling path toward the course top-3 band ($<13.05$ private RMSE). We include the required code link, Kaggle snapshot, contribution table, and ablations above.
 
 % ==========================================
 % REFERENCES
